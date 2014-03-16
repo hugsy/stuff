@@ -41,6 +41,14 @@ import binascii
 
 import gdb
 
+class GefMissingDependencyException(Exception):
+    def __init__(self, value):
+        self.value = value
+        return
+
+    def __str__(self):
+        return repr(self.value)
+
 
 # https://wiki.python.org/moin/PythonDecoratorLibrary#Memoize
 class memoize(object):
@@ -204,9 +212,13 @@ def gef_execute(command, as_list = False):
 
 def gef_execute_external(command, as_list=False):
     if as_list :
-        return subprocess.check_output(command, shell=True).splitlines()
+        return subprocess.check_output(command,
+                                       stderr=subprocess.STDOUT,
+                                       shell=True).splitlines()
     else:
-        return subprocess.check_output(command, shell=True)
+        return subprocess.check_output(command,
+                                       stderr=subprocess.STDOUT,
+                                       shell=True)
 
 
 def disassemble_parse(name, filter_opcode=None):
@@ -636,6 +648,8 @@ class GenericCommand(gdb.Command):
     """Generic class for invoking commands"""
 
     def __init__(self):
+        self.pre_load()
+
         required_attrs = ["do_invoke", "_cmdline_", "_syntax_"]
 
         for attr in required_attrs:
@@ -644,6 +658,9 @@ class GenericCommand(gdb.Command):
 
         self.__doc__  += "\n" + "Syntax: " + self._syntax_
         super(GenericCommand, self).__init__(self._cmdline_, gdb.COMMAND_NONE)
+
+        self.post_load()
+
         return
 
 
@@ -658,6 +675,14 @@ class GenericCommand(gdb.Command):
         return
 
 
+    def pre_load(self):
+        return
+
+
+    def post_load(self):
+        return
+
+
 # class TemplateCommand(GenericCommand):
     # """TemplaceCommand: add description here."""
 
@@ -666,6 +691,40 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+class AssembleCommand(GenericCommand):
+    """AssembleCommand: using radare2 to assemble code."""
+
+    _cmdline_ = "assemble"
+    _syntax_  = "%s mode [instruction1;[instruction2;]] " % _cmdline_
+
+    def pre_load(self):
+        try:
+            import r2, r2.r_asm
+
+        except ImportError:
+            raise GefMissingDependencyException("radare2 Python bindings could not be loaded")
+
+
+    def do_invoke(self, argv):
+        if len(argv) < 2:
+            self.usage()
+            print("Modes available:\n%s" % gef_execute_external("rasm2 -L; exit 0"))
+            return
+
+        mode = argv[0]
+        instns = " ".join(argv[1:])
+        print ( "%s" % self.assemble(mode, instns) )
+        return
+
+
+    def assemble(self, mode, instructions):
+        r2 = sys.modules['r2']
+        asm = r2.r_asm.RAsm()
+        asm.use(mode)
+        opcode = asm.massemble( instructions )
+        return None if opcode is None else opcode.buf_hex
 
 
 class InvokeCommand(GenericCommand):
@@ -1516,6 +1575,7 @@ class GEFCommand(gdb.Command):
                         ElfInfoCommand,
                         ProcessListingCommand,
                         InvokeCommand,
+                        AssembleCommand,
 
                         # add new commands here
                         ]
@@ -1542,7 +1602,10 @@ class GEFCommand(gdb.Command):
 
     def load(self, mod=None):
         for (cmd, class_name) in self.cmds:
-            class_name()
+            try:
+                class_name()
+            except Exception, e:
+                err("Failed to load `%s`: %s" % (cmd, e.message))
 
         print("%s, type `%s' to start" % (Color.GREEN + "gef loaded" +Color.NORMAL,
                                           Color.RED + "gef help" +Color.NORMAL))
