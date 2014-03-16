@@ -292,7 +292,7 @@ def read_memory_until_null(address):
 
     while True:
         c = read_memory(address + i, 1)
-        if ord(c) == 0x00:
+        if ord(c[0]) == 0x00:
             break
 
         buf += str(c)
@@ -995,7 +995,6 @@ class DereferenceCommand(GenericCommand):
             return
 
         pointer = gdb.parse_and_eval(argv[0])
-        print "Pointer is", pointer
 
         if pointer.type.code == gdb.TYPE_CODE_VOID:
             do_loop = False
@@ -1008,7 +1007,7 @@ class DereferenceCommand(GenericCommand):
                 value = self.dereference( pointer )
                 deref_pointer = long(value)
 
-                line = "%s -> %s" % ("\t"*i, format_address(deref_pointer))
+                line = "-> %s " % (format_address(deref_pointer))
                 addr = lookup_address(deref_pointer)
                 if addr is None:
                     do_loop = False
@@ -1017,11 +1016,10 @@ class DereferenceCommand(GenericCommand):
                     pointer = deref_pointer
                     i += 1
 
-                print ("%s" % line)
-
             except gdb.MemoryError:
                 do_loop = False
 
+        print ("Pointer %s %s" % (format_address(long(pointer)), line))
         print ("Value:")
         data = read_memory_until_null(pointer)
         print ("%s" % hexdump(data))
@@ -1580,6 +1578,10 @@ if __name__  == "__main__":
     gdb.execute("set width 0")
     gdb.execute("set prompt %s" % Color.RED+GEF_PROMPT+Color.NORMAL)
     gdb.execute("set follow-fork-mode child")
+
+    # gdb history
+    gdb.execute("set history filename ~/.gdb_history")
+    gdb.execute("set history save")
 
     # aliases
     # WinDBG-like aliases (I like them)
