@@ -17,11 +17,12 @@
 # todo:
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
-# -
+# - add sparc(64) arch
+#
 # todo_commands:
 # - patch N bytes in mem (\xcc, \x90, )
 # - finish FormatStringSearchCommand
-# -
+# - 
 #
 # todo arch:
 # * sparc
@@ -942,10 +943,10 @@ class ContextCommand(GenericCommand):
 
                 if new_value == old_value:
                     l= "%s  %s " % (Color.GREEN + reg + Color.NORMAL,
-                                      format_address(addr) )
+                                    format_address(addr) )
                 else:
                     l= "%s  %s%s%s " % (Color.GREEN + reg + Color.NORMAL,
-                                          Color.RED, format_address(addr), Color.NORMAL)
+                                        Color.RED, format_address(addr), Color.NORMAL)
             else:
                 l= "%10s  %s " % (Color.GREEN + reg + Color.NORMAL, new_value)
 

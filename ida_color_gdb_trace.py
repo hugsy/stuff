@@ -1,5 +1,7 @@
 #
-# color execution flow from GDB logfile
+# IDA script to color execution flow from GDB logfile
+#
+# @_hugsy_
 #
 
 
