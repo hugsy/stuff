@@ -17,15 +17,15 @@
 # todo:
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
-# - add sparc(64) arch
+# -
 #
-# todo_commands:
+# todo commands:
 # - patch N bytes in mem (\xcc, \x90, )
 # - finish FormatStringSearchCommand
-# - 
+# -
 #
 # todo arch:
-# * sparc
+# * sparc64
 # *
 #
 import cStringIO
@@ -44,11 +44,11 @@ import gdb
 
 class GefMissingDependencyException(Exception):
     def __init__(self, value):
-        self.value = value
+        self.message = value
         return
 
     def __str__(self):
-        return repr(self.value)
+        return repr(self.message)
 
 
 # https://wiki.python.org/moin/PythonDecoratorLibrary#Memoize
@@ -283,6 +283,13 @@ def powerpc_registers():
             "$r24", "$r25", "$r26", "$r27", "$r28", "$r29", "$r30", "$r31",
             "$pc", "$msr", "$cr", "$lr", "$ctr", "$xer", "$orig_r3", "$trap" ]
 
+def sparc_registers():
+    return ["$g0", "$g1", "$g2", "$g3", "$g4", "$g5", "$g6", "$g7",
+            "$o0", "$o1", "$o2", "$o3", "$o4", "$o5",
+            "$l0", "$l1", "$l2", "$l3", "$l4", "$l5", "$l6", "$l7",
+            "$i0", "$i1", "$i2", "$i3", "$i4", "$i5",
+            "$pc", "$sp", "$fp", "$psr",
+            ]
 
 def all_registers():
     if is_arm():
@@ -293,7 +300,9 @@ def all_registers():
         return x86_64_registers()
     elif is_powerpc():
         return powerpc_registers()
-
+    elif is_sparc():
+        return sparc_registers()
+    # todo sparc64
 
 def read_memory(addr, length=0x10):
     return gdb.selected_inferior().read_memory(addr, length)
@@ -571,8 +580,12 @@ def is_mips():
 @memoize
 def is_powerpc():
     elf = get_elf_headers()
-    return elf.e_machine==0x14
+    return elf.e_machine==0x14 # http://refspecs.freestandards.org/elf/elfspec_ppc.pdf
 
+@memoize
+def is_sparc():
+    elf = get_elf_headers()
+    return elf.e_machine==0x02  # http://www.sparc.org/standards/psABI3rd.pdf
 
 
 def format_address(addr):
@@ -695,7 +708,7 @@ class GenericCommand(gdb.Command):
 
 
 class AssembleCommand(GenericCommand):
-    """AssembleCommand: using radare2 to assemble code."""
+    """AssembleCommand: using radare2 to assemble code (requires r2 Python bindings)"""
 
     _cmdline_ = "assemble"
     _syntax_  = "%s mode [instruction1;[instruction2;]] " % _cmdline_
@@ -1365,7 +1378,7 @@ class TraceRunCommand(GenericCommand):
 
 
 class PatternCommand(GenericCommand):
-    """ Metasploit-like pattern generation/search """
+    """Metasploit-like pattern generation/search"""
 
     _cmdline_ = "pattern"
     _syntax_  = "%s create SIZE\n" % _cmdline_
