@@ -18,7 +18,6 @@
 # todo:
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
-# - add ROPGadget support
 # -
 #
 # todo commands:
@@ -43,6 +42,9 @@ import os
 import binascii
 
 import gdb
+
+ROPGADGET_PATH = os.getenv("HOME") + "/tools/ROPgadget"
+
 
 class GefMissingDependencyException(Exception):
     def __init__(self, value):
@@ -707,6 +709,51 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+class ROPgadgetCommand(GenericCommand):
+    """ROPGadget (http://shell-storm.org/project/ROPgadget) plugin"""
+
+    _cmdline_ = "ropgadget"
+    _syntax_  = "%s" % _cmdline_
+
+
+    def pre_load(self):
+        try:
+            sys.path.append(ROPGADGET_PATH)
+            import ROPgadget
+
+        except ImportError:
+            raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
+
+        return
+
+
+    def do_invoke(self, argv):
+        import ROPgadget
+
+        class FakeArgs(object):
+            binary = None
+            string = None
+            opcode = None
+            memstr = None
+            console = None
+            norop = None
+            nojop = None
+            depth = 10
+            nosys = None
+            range = "0x00-0x00"
+            badbytes = None
+            only = None
+            filter = None
+            ropchain = None
+
+
+        args = FakeArgs()
+        args.binary = get_filename()
+
+        ROPgadget.Core( args ).analyze()
+        return
 
 
 class FileDescriptorCommand(GenericCommand):
@@ -1615,11 +1662,13 @@ class GEFCommand(gdb.Command):
                         InvokeCommand,
                         AssembleCommand,
                         FileDescriptorCommand,
+                        ROPgadgetCommand,
 
                         # add new commands here
                         ]
 
         self.cmds = [ (x._cmdline_, x) for x in self.classes ]
+        self.loaded_cmds = []
         self.load()
         return
 
@@ -1643,6 +1692,7 @@ class GEFCommand(gdb.Command):
         for (cmd, class_name) in self.cmds:
             try:
                 class_name()
+                self.loaded_cmds.append( (cmd, class_name)  )
             except Exception, e:
                 err("Failed to load `%s`: %s" % (cmd, e.message))
 
@@ -1654,7 +1704,7 @@ class GEFCommand(gdb.Command):
     def help(self):
         print titlify("GEF - GDB Enhanced Features")
 
-        for (cmd, class_name) in self.cmds:
+        for (cmd, class_name) in self.loaded_cmds:
             try:
                 msg = "%-20s -- %s" % (cmd, Color.GREEN+class_name.__doc__+Color.NORMAL)
 
