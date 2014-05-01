@@ -6,6 +6,7 @@
 # * arm-32/arm-64
 # * mipsel
 # * powerpc
+# * sparc
 #
 # @_hugsy_
 #
@@ -17,6 +18,7 @@
 # todo:
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
+# - add ROPGadget support
 # -
 #
 # todo commands:
@@ -302,7 +304,7 @@ def all_registers():
         return powerpc_registers()
     elif is_sparc():
         return sparc_registers()
-    # todo sparc64
+
 
 def read_memory(addr, length=0x10):
     return gdb.selected_inferior().read_memory(addr, length)
@@ -705,6 +707,28 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+class FileDescriptorCommand(GenericCommand):
+    """Enumerate file descriptors opened by process."""
+
+    _cmdline_ = "fd"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        if not is_alive():
+            warn("No debugging session active")
+            return
+
+        pid = get_pid()
+        path = "/proc/%s/fd" % pid
+
+        for fname in os.listdir(path):
+            fullpath = path+"/"+fname
+            if os.path.islink(fullpath):
+                print("- %s -> %s" % (fullpath, os.readlink(fullpath)))
+
+        return
 
 
 class AssembleCommand(GenericCommand):
@@ -1590,6 +1614,7 @@ class GEFCommand(gdb.Command):
                         ProcessListingCommand,
                         InvokeCommand,
                         AssembleCommand,
+                        FileDescriptorCommand,
 
                         # add new commands here
                         ]
