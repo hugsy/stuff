@@ -2,7 +2,7 @@
 # gef - GDB Enhanced Features
 #
 # Tested on
-# * x86-32/x86-64
+# * x86-32/x86-64 (even though you should totally use `gdb-peda` (https://github.com/longld/peda) instead)
 # * arm-32/arm-64
 # * mipsel
 # * powerpc
@@ -43,7 +43,7 @@ import binascii
 
 import gdb
 
-ROPGADGET_PATH = os.getenv("HOME") + "/tools/ROPgadget"
+ROPGADGET_PATH = os.getenv("HOME") + "/code/ROPgadget"
 
 
 class GefMissingDependencyException(Exception):
@@ -715,7 +715,7 @@ class ROPgadgetCommand(GenericCommand):
     """ROPGadget (http://shell-storm.org/project/ROPgadget) plugin"""
 
     _cmdline_ = "ropgadget"
-    _syntax_  = "%s" % _cmdline_
+    _syntax_  = "%s  [OPTIONS]" % _cmdline_
 
 
     def pre_load(self):
@@ -747,12 +747,35 @@ class ROPgadgetCommand(GenericCommand):
             only = None
             filter = None
             ropchain = None
-
+            offset = 0x00
 
         args = FakeArgs()
-        args.binary = get_filename()
+        self.parse_args(args, argv)
+
+        if args.binary is None:
+            args.binary = get_filename()
 
         ROPgadget.Core( args ).analyze()
+        return
+
+
+    def parse_args(self, args, argv):
+        # options format is 'option_name1=option_value1'
+        for opt in argv:
+            name, value = opt.split("=", 1)
+            if hasattr(args, name):
+                if name == "console":
+                    continue
+                elif name == "depth":
+                    value = int(depth)
+                    if depth < 2:
+                        depth = 2
+                elif name == "filter":
+                    value = value.split("|")
+                elif name == "offset":
+                    value = int(value, 16)
+
+                setattr(args, name, value)
         return
 
 
