@@ -103,6 +103,7 @@ class Color:
     BOLD           = "\x1b[1m"
     UNDERLINE      = "\x1b[4m"
 
+
 # helpers
 class Address:
     pass
@@ -748,6 +749,8 @@ class ROPgadgetCommand(GenericCommand):
             filter = None
             ropchain = None
             offset = 0x00
+            outfile = None
+            thumb = None
 
         args = FakeArgs()
         self.parse_args(args, argv)
