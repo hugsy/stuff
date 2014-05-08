@@ -22,6 +22,7 @@
 #
 # todo commands:
 # - patch N bytes in mem (\xcc, \x90, )
+# - edit gef config at runtime
 # - finish FormatStringSearchCommand
 # -
 #
@@ -720,12 +721,16 @@ class ROPgadgetCommand(GenericCommand):
 
 
     def pre_load(self):
+        if not os.path.isdir(ROPGADGET_PATH):
+            raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
+
+        sys.path.append(ROPGADGET_PATH)
+
         try:
-            sys.path.append(ROPGADGET_PATH)
             import ROPgadget
 
-        except ImportError:
-            raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
+        except ImportError, ie:
+            raise GefMissingDependencyException("Failed to import ROPgadget: %s" % ie)
 
         return
 
@@ -773,8 +778,6 @@ class ROPgadgetCommand(GenericCommand):
                     value = int(depth)
                     if depth < 2:
                         depth = 2
-                elif name == "filter":
-                    value = value.split("|")
                 elif name == "offset":
                     value = int(value, 16)
 
