@@ -16,6 +16,7 @@
 #
 #
 # todo:
+# - add command shellcode using ShellStorm repo (http://shell-storm.org/api/?s=<keyword>)
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
 # -
@@ -162,19 +163,19 @@ def titlify(msg):
     return "{0}[{1} {3} {2}]{0}".format('='*20, Color.RED, Color.NORMAL, msg)
 
 def ok(msg):
-    print (Color.GREEN+"[+]"+Color.NORMAL+" "+msg)
+    print (Color.BOLD+Color.GREEN+"[+]"+Color.NORMAL+" "+msg)
     return
 
 def warn(msg):
-    print (Color.YELLOW+"[+]"+Color.NORMAL+" "+msg)
+    print (Color.BOLD+Color.YELLOW+"[+]"+Color.NORMAL+" "+msg)
     return
 
 def err(msg):
-    print (Color.RED+"[+]"+Color.NORMAL+" "+msg)
+    print (Color.BOLD+Color.RED+"[+]"+Color.NORMAL+" "+msg)
     return
 
 def info(msg):
-    print (Color.BLUE+"[+]"+Color.NORMAL+" "+msg)
+    print (Color.BOLD+Color.BLUE+"[+]"+Color.NORMAL+" "+msg)
     return
 
 def hexdump(src, l=0x10, show_line_num=True):
@@ -743,6 +744,30 @@ class GenericCommand(gdb.Command):
         # return
 
 
+
+class CtfExploitTemplaterCommand(GenericCommand):
+    """TemplaceCommand: add description here."""
+
+    _cmdline_ = "ctf-exploit-templater"
+    _syntax_  = "%s HOST PORT [/path/exploit.py]" % _cmdline_
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+
+        if argc not in (2, 3):
+            err("%s" % self._syntax_)
+            return
+
+        host, port = argv[0], argv[1]
+        path = argv[2] if argc==3 else "./gef-exploit.py"
+
+        with open(path, "w") as f:
+            f.write( CTF_EXPLOIT_TEMPLATE % (host, port) )
+
+        info("Exploit script written as '%s'" % path)
+        return
+
+
 class ROPgadgetCommand(GenericCommand):
     """ROPGadget (http://shell-storm.org/project/ROPgadget) plugin"""
 
@@ -832,7 +857,7 @@ class FileDescriptorCommand(GenericCommand):
         for fname in os.listdir(path):
             fullpath = path+"/"+fname
             if os.path.islink(fullpath):
-                print("- %s -> %s" % (fullpath, os.readlink(fullpath)))
+                info("- %s -> %s" % (fullpath, os.readlink(fullpath)))
 
         return
 
@@ -854,12 +879,12 @@ class AssembleCommand(GenericCommand):
     def do_invoke(self, argv):
         if len(argv) < 2:
             self.usage()
-            print("Modes available:\n%s" % gef_execute_external("rasm2 -L; exit 0"))
+            err("Modes available:\n%s" % gef_execute_external("rasm2 -L; exit 0"))
             return
 
         mode = argv[0]
         instns = " ".join(argv[1:])
-        print ( "%s" % self.assemble(mode, instns) )
+        info( "%s" % self.assemble(mode, instns) )
         return
 
 
@@ -878,7 +903,7 @@ class InvokeCommand(GenericCommand):
     _syntax_  = "%s [COMMAND]" % _cmdline_
 
     def do_invoke(self, argv):
-        print ( "%s" % gef_execute_external(" ".join(argv)) )
+        print( "%s" % gef_execute_external(" ".join(argv)) )
         return
 
 
@@ -1017,6 +1042,7 @@ class EntryPointBreakCommand(GenericCommand):
             value = gdb.parse_and_eval("main")
             info("Breaking at '%s'" % value)
             gdb.execute("tbreak main")
+            info("Starting execution")
             gdb.execute("run")
             return
 
@@ -1028,6 +1054,7 @@ class EntryPointBreakCommand(GenericCommand):
             value = gdb.parse_and_eval("__libc_start_main")
             info("Breaking at '%s'" % value)
             gdb.execute("tbreak __libc_start_main")
+            info("Starting execution")
             gdb.execute("run")
             return
 
@@ -1040,6 +1067,7 @@ class EntryPointBreakCommand(GenericCommand):
         if value:
             info("Breaking at entry-point: %#x" % value)
             gdb.execute("tbreak *%x" % value)
+            info("Starting execution")
             gdb.execute("run")
             return
 
@@ -1199,36 +1227,11 @@ class DereferenceCommand(GenericCommand):
             return
 
         pointer = gdb.parse_and_eval(argv[0])
+        addr = DereferenceCommand.dereference_from(pointer)
 
-        if pointer.type.code == gdb.TYPE_CODE_VOID:
-            do_loop = False
-        else:
-            i = 1
-            do_loop = True
-
-        while do_loop:
-            value = pointer
-            line = "-> %d " % value
-            try:
-                value = DereferenceCommand.dereference( pointer )
-                deref_pointer = long(value)
-
-                line = "-> %s " % (format_address(deref_pointer))
-                addr = lookup_address(deref_pointer)
-                if addr is None:
-                    do_loop = False
-                else:
-                    line+= " (%s)" % (addr.section.path)
-                    pointer = deref_pointer
-                    i += 1
-
-            except gdb.MemoryError:
-                do_loop = False
-
-        print ("Pointer %s %s" % (format_address(long(pointer)), line))
-        print ("Value:")
-        data = read_memory_until_null(pointer)
-        print ("%s" % hexdump(data))
+        print ("Following pointers from `%s`:\n%s: %s" % (argv[0],
+                                                          format_address(pointer),
+                                                          " -> ".join(addr)))
         return
 
 
@@ -1236,6 +1239,36 @@ class DereferenceCommand(GenericCommand):
     def dereference(addr):
         p_long = gdb.lookup_type('unsigned long').pointer()
         return gdb.Value(addr).cast(p_long).dereference()
+
+
+    @staticmethod
+    def dereference_from(addr):
+        old_deref = addr
+        msg = []
+        while True:
+            try:
+                deref = DereferenceCommand.dereference(old_deref)
+                value = long(deref)
+
+                msg.append( '"%s"' % format_address(long(deref)) )
+                if is_readable_string(value):
+                    msg.append( read_string(value) )
+                    break
+                old_deref = deref
+
+            except OverflowError as e:
+                msg.append( "%d" % int(deref) )
+            except gdb.MemoryError as e:
+                msg.append(" -> %d" % int(deref) )
+            except Exception as e:
+                err("Unexpected exception: " + e)
+                pass
+            finally:
+                break
+
+        return msg
+
+
 
 
 class ASLRCommand(GenericCommand):
@@ -1625,31 +1658,12 @@ class InspectStackCommand(GenericCommand):
 
         for i in xrange(nb_stack_block):
             cur_addr = long(rsp) + i*memalign
+            addr = gdb.Value(cur_addr)
+            addrs = DereferenceCommand.dereference_from(cur_addr)
+
             msg = Color.BOLD+Color.BLUE + format_address(cur_addr) + Color.NORMAL
-
-            old_deref = cur_addr
-            while True:
-                try:
-                    deref = DereferenceCommand.dereference(old_deref)
-                    value = long(deref)
-
-                    msg+= " -> %s" % format_address(long(deref))
-                    if is_readable_string(value):
-                        msg+= " -> %s" % read_string(value)
-                        break
-
-                    old_deref = deref
-
-                except OverflowError as e:
-                    msg+= " -> %d" % int(deref)
-                except gdb.MemoryError as e:
-                    msg+= " -> %d" % int(deref)
-                except Exception as e:
-                    print e
-                    pass
-                finally:
-                    break
-
+            msg += ": "
+            msg += " -> ".join(addrs)
             print(msg)
 
         return
@@ -1789,6 +1803,7 @@ class GEFCommand(gdb.Command):
                         FileDescriptorCommand,
                         ROPgadgetCommand,
                         InspectStackCommand,
+                        CtfExploitTemplaterCommand,
 
                         # add new commands here
                         ]
@@ -1902,3 +1917,91 @@ if __name__  == "__main__":
     # gdb.execute("alias -a -- dd = xd -d")
     # gdb.execute("alias dw = xd -w")
     # gdb.execute("alias db = xd -b")
+
+
+################################################################################
+##
+##  CTF exploit templates
+##
+CTF_EXPLOIT_TEMPLATE = """#!/usr/bin/env python2
+import socket, struct, sys, telnetlib, itertools, binascii
+
+HOST = "%s"
+PORT = %s
+
+DEBUG = True
+
+def xor(data, key): return binascii.hexlify(''.join(chr(ord(c1) ^ ord(c2)) for c1, c2 in itertools.zip(binascii.unhexlify(s1), cycle(binascii.unhexlify(s2)))))
+def hexdump(src, length=0x10):
+    f=''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
+    n=0
+    result=''
+    while src:
+       s,src = src[:length],src[length:]
+       hexa = ' '.join(["%%02X"%%ord(x) for x in s])
+       s = s.translate(f)
+       result += "%%04X   %%-*s   %%s\\n" %% (n, length*3, hexa, s)
+       n+=length
+    return result
+def _s(i): return struct.pack("<I", i)
+def _u(i): return struct.unpack("<I", i)[0]
+def err(msg): print("[!] %%s" %% msg)
+def ok(msg): print("[+] %%s" %% msg)
+def debug(msg, in_hexa=False):
+    if DEBUG:
+        if not in_hexa:
+            print("[*] %%s" %% msg)
+        else:
+            print("[*] Hexdump:\\n%%s" %% hexdump(msg))
+
+
+def grab_banner(s):
+    data = s.recv(1024)
+    debug("Received %%d bytes: %%s" %% (len(data), data))
+    return data
+
+def recv_until(s, pattern="", blocking=False):
+    buffer = ""
+    while True:
+        data = s.recv(1024)
+        if data < 0: break
+        if data == 0 and not blocking: break
+        buffer += data
+        if buffer.endswith(pattern): break
+    debug("Received %%d bytes until pattern" %% len(buffer))
+    return buffer
+
+def build_socket(host, port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((host, port))
+    ok("Connected to %%s:%%d" %% (host, port))
+    return s
+
+def interact(s):
+    t = telnetlib.Telnet()
+    t.sock = s
+    try:
+        t.interact()
+    except KeyboardInterrupt:
+        ok("Leaving")
+    t.close()
+    return
+
+def pwn(s):
+    #
+    # add your l337 stuff here
+    #
+    return True
+
+if __name__ == "__main__":
+    s = build_socket(HOST, PORT)
+    banner = grab_banner(s)
+    if pwn(s):
+        ok("Got it, interacting (Ctrl-C to break)")
+        interact(s)
+    else:
+        err("Failed to exploit")
+    exit(0)
+
+# auto-generated by {0}
+""".format(__file__)
