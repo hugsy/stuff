@@ -47,13 +47,22 @@ import gdb
 ROPGADGET_PATH = os.getenv("HOME") + "/code/ROPgadget"
 
 
-class GefMissingDependencyException(Exception):
+class GefGenericException(Exception):
     def __init__(self, value):
         self.message = value
         return
 
     def __str__(self):
         return repr(self.message)
+
+class GefMissingDependencyException(GefGenericException):
+    pass
+
+class GefUnsupportedMode(GefGenericException):
+    pass
+
+class GefUnsupportedOS(GefGenericException):
+    pass
 
 
 # https://wiki.python.org/moin/PythonDecoratorLibrary#Memoize
@@ -308,6 +317,8 @@ def all_registers():
         return powerpc_registers()
     elif is_sparc():
         return sparc_registers()
+    else:
+        raise GefUnsupportedOS("OS type is currently not supported")
 
 
 def read_memory(addr, length=0x10):
@@ -329,16 +340,28 @@ def read_memory_until_null(address):
     return buf
 
 
-def read_string(address):
+def is_readable_string(address):
+    """
+    Here we will assume that a readable string is
+    a consecutive byte array whose
+    * last element is 0x00
+    * and values for each byte is [0x20, 0x7F]
+    """
     buffer = read_memory_until_null(address)
-    i = 0
+    for c in buffer:
+        if not (0x20 <= ord(c) < 0x7f):
+            return False
+    return True
 
-    while 0x20 <= ord(buffer[i]) < 0x7f:
-        i += 1
+def read_string(address):
+    if not is_readable_string(address):
+        raise ValueError("Content at address `%#x` is not a string" % address)
 
-    buffer = buffer[:i].replace("\n","\\n").replace("\r","\\r")
-    buffer = buffer.replace("\t","\\t").replace("\"","\\\"")
-    return buffer
+    buf = read_memory_until_null(address)
+    replaced_chars = [ ("\n","\\n"), ("\r","\\r"), ("\t","\\t"), ("\"","\\\"")]
+    for f,t in replaced_chars:
+        buf = buf.replace(f, t)
+    return buf
 
 
 def is_alive():
@@ -594,14 +617,21 @@ def is_sparc():
     return elf.e_machine==0x02  # http://www.sparc.org/standards/psABI3rd.pdf
 
 
-def format_address(addr):
+def get_memory_alignment():
     if is_elf32():
-        return "%#.8x" % addr
+        return 32
     elif is_elf64():
-        return "%#.16x" % addr
+        return 64
     else:
-        err("Unsupported address type")
-        return ""
+        raise GefUnsupportedMode("GEF is running under an unsupported mode, functions will not work")
+
+
+def format_address(addr):
+    memalign_size = get_memory_alignment()
+    if memalign_size == 32:
+        return "%#.8x" % (addr & 0xFFFFFFFF)
+    elif memalign_size == 64:
+        return "%#.16x" % (addr & 0xFFFFFFFFFFFFFFFF)
 
 
 
@@ -1054,18 +1084,19 @@ class ContextCommand(GenericCommand):
                 t_long = gdb.lookup_type("unsigned long")
                 addr = long(new_value.cast(t_long))
 
+                l = "%s  " % (Color.GREEN + reg + Color.NORMAL)
                 if new_value == old_value:
-                    l= "%s  %s " % (Color.GREEN + reg + Color.NORMAL,
-                                    format_address(addr) )
+                    l += "%s " % (format_address(addr) )
                 else:
-                    l= "%s  %s%s%s " % (Color.GREEN + reg + Color.NORMAL,
-                                        Color.RED, format_address(addr), Color.NORMAL)
+                    l += "%s%s%s " % (Color.RED, format_address(addr), Color.NORMAL)
             else:
                 l= "%10s  %s " % (Color.GREEN + reg + Color.NORMAL, new_value)
 
             i+=1
             print (l),
-            if i and i%4==0: print("")
+
+            if i and i%4==0: print("") # show 4 registers per line
+
         print
         return
 
@@ -1176,8 +1207,10 @@ class DereferenceCommand(GenericCommand):
             do_loop = True
 
         while do_loop:
+            value = pointer
+            line = "-> %d " % value
             try:
-                value = self.dereference( pointer )
+                value = DereferenceCommand.dereference( pointer )
                 deref_pointer = long(value)
 
                 line = "-> %s " % (format_address(deref_pointer))
@@ -1196,11 +1229,11 @@ class DereferenceCommand(GenericCommand):
         print ("Value:")
         data = read_memory_until_null(pointer)
         print ("%s" % hexdump(data))
-
         return
 
 
-    def dereference(self, addr):
+    @staticmethod
+    def dereference(addr):
         p_long = gdb.lookup_type('unsigned long').pointer()
         return gdb.Value(addr).cast(p_long).dereference()
 
@@ -1561,6 +1594,69 @@ class PatternCommand(GenericCommand):
 
 
 
+class InspectStackCommand(GenericCommand):
+    """Exploiter-friendly top-down stack inspection command (peda-like)"""
+
+    _cmdline_ = "inspect-stack"
+    _syntax_  = "%s  [NbStackEntry]" % _cmdline_
+
+
+    def do_invoke(self, argv):
+        if not is_alive():
+            warn("No debugging session active")
+            return
+
+        nb_stack_block = 10
+        argc = len(argv)
+        if argc >= 1:
+            try:
+                nb_stack_block = int(argv[0])
+            except ValueError:
+                pass
+
+        top_stack = get_register("$sp")
+        self.inspect_stack(top_stack, nb_stack_block)
+        return
+
+
+    def inspect_stack(self, rsp, nb_stack_block):
+        memalign = get_memory_alignment()
+        print("Inspecting %d from SP=%s" % (nb_stack_block, format_address(rsp)))
+
+        for i in xrange(nb_stack_block):
+            cur_addr = long(rsp) + i*memalign
+            msg = Color.BOLD+Color.BLUE + format_address(cur_addr) + Color.NORMAL
+
+            old_deref = cur_addr
+            while True:
+                try:
+                    deref = DereferenceCommand.dereference(old_deref)
+                    value = long(deref)
+
+                    msg+= " -> %s" % format_address(long(deref))
+                    if is_readable_string(value):
+                        msg+= " -> %s" % read_string(value)
+                        break
+
+                    old_deref = deref
+
+                except OverflowError as e:
+                    msg+= " -> %d" % int(deref)
+                except gdb.MemoryError as e:
+                    msg+= " -> %d" % int(deref)
+                except Exception as e:
+                    print e
+                    pass
+                finally:
+                    break
+
+            print(msg)
+
+        return
+
+
+
+
 class ChecksecCommand(GenericCommand):
     """Checksec.sh (http://www.trapkit.de/tools/checksec.html) port."""
 
@@ -1692,6 +1788,7 @@ class GEFCommand(gdb.Command):
                         AssembleCommand,
                         FileDescriptorCommand,
                         ROPgadgetCommand,
+                        InspectStackCommand,
 
                         # add new commands here
                         ]
@@ -1773,7 +1870,6 @@ if __name__  == "__main__":
     gdb.execute("alias -a be = enable breakpoints")
     gdb.execute("alias -a bd = disable breakpoints")
     gdb.execute("alias -a bc = delete breakpoints")
-    # gdb.execute("alias -a ba = awatch")
     gdb.execute("alias -a tbp = tbreak")
     gdb.execute("alias -a tba = thbreak")
 
