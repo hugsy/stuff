@@ -16,20 +16,18 @@
 #
 #
 # todo:
-# - add command shellcode using ShellStorm repo (http://shell-storm.org/api/?s=<keyword>)
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
-# -
+# - sort dereference addresses by type (int/ptr/func/etc.)
 #
 # todo commands:
 # - patch N bytes in mem (\xcc, \x90, )
 # - edit gef config at runtime
 # - finish FormatStringSearchCommand
-# -
 #
 # todo arch:
-# * sparc64
-# *
+# - sparc64
+#
 #
 import cStringIO
 import itertools
@@ -1248,11 +1246,10 @@ class ContextCommand(GenericCommand):
             if new_value.type.code == gdb.TYPE_CODE_FLAGS:
                 l += "%s " % (new_value)
             else:
-                if new_value.type.code == gdb.TYPE_CODE_PTR:
-                    new_value = long(new_value)
-                    old_value = long(old_value)
+                new_value = long(new_value) & 0xFFFFFFFFFFFFFFFF
+                old_value = long(old_value) & 0xFFFFFFFFFFFFFFFF
 
-                if long(new_value) == long(old_value):
+                if new_value == old_value:
                     l += "%s " % (format_address(new_value))
                 else:
                     l += "%s " % Color.redify(format_address(new_value))
