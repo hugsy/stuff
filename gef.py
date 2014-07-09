@@ -635,6 +635,9 @@ def format_address(addr):
         return "%#.16x" % (addr & 0xFFFFFFFFFFFFFFFF)
 
 
+def clear_screen():
+    gdb.execute("shell clear")
+
 
 #
 # breakpoints
@@ -722,7 +725,7 @@ class GenericCommand(gdb.Command):
 
 
     def usage(self):
-        info("Syntax\n" + self._syntax_ )
+        err("Syntax\n" + self._syntax_ )
         return
 
 
@@ -743,6 +746,91 @@ class GenericCommand(gdb.Command):
     # def do_invoke(self, argv):
         # return
 
+
+
+
+class ShellcodeCommand(GenericCommand):
+    """ ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API
+    to download shellcodes """
+
+    _cmdline_ = "shellcode"
+    _syntax_  = "%s (help|search|get)" % _cmdline_
+
+    api_base = "http://shell-storm.org"
+    search_url = api_base + "/api/?s="
+    get_url = api_base + "/shellcode/files/shellcode-%d.php"
+
+    def pre_load(self):
+        try:
+            import requests
+        except ImportError:
+            raise GefMissingDependencyException("Missing Python `requests` package")
+        return
+
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+        if argc == 0 or argv[0] not in ("help", "search", "get"):
+            self.usage()
+            return
+
+        if argv[0] == "help":
+            info("Commands")
+            print("%s search <pattern1> <pattern2> [...]: search shellcodes matching patterns" % self._cmdline_)
+            print("%s get ID: use id provided by `search' subcommand to download shellcode" % self._cmdline_)
+            return
+
+        if argv[0] == "search":
+            if argc == 1:
+                err("Missing search pattern")
+                return
+            self.search_shellcode(argv[1:])
+            return
+
+        # get
+        if argc == 1 or not argv[1].isdigit():
+            err("Incorrect ID")
+            return
+
+        self.get_shellcode(int(argv[1]))
+        return
+
+
+    def search_shellcode(self, search_options):
+        import requests
+
+        # API : http://shell-storm.org/shellcode/
+        args = "*".join(search_options)
+        http = requests.get(self.search_url + args)
+        if http.status_code != 200:
+            err("Could not query search page: got %d" % http.status_code)
+            return
+
+        # format: [author, OS/arch, cmd, id, link]
+        lines = http.text.split("\n")
+        refs = [ line.split("::::") for line in lines ]
+
+        info("Showing matching shellcodes")
+        for ref in refs:
+            auth, arch, cmd, sid, link = ref
+            print("\t".join([sid, arch, cmd]))
+        info("Use `%s get <id>` to fetch shellcode" % self._cmdline_)
+        return
+
+
+    def get_shellcode(self, sid):
+        import requests
+        http = requests.get(self.get_url % sid)
+        if http.status_code != 200:
+            err("Could not query search page: got %d" % http.status_code)
+            return
+        info("Downloading shellcode id=%d" % sid)
+        fd, fname = tempfile.mkstemp(suffix=".txt", prefix="%s-" % self._cmdline_, text=True, dir='/tmp')
+        data = http.text.split("\n")[7:-11]
+        os.write(fd, "\n".join(data))
+        os.close(fd)
+        info("Shellcode written as '%s'" % fname)
+        return
 
 
 class CtfExploitTemplaterCommand(GenericCommand):
@@ -1047,7 +1135,7 @@ class EntryPointBreakCommand(GenericCommand):
             return
 
         except gdb.error:
-            pass
+            info("Could not solve `main` symbol")
 
         # has __libc_start_main() ?
         try:
@@ -1059,7 +1147,9 @@ class EntryPointBreakCommand(GenericCommand):
             return
 
         except gdb.error:
-            pass
+            info("Could not solve `__libc_start_main` symbol")
+
+        ## TODO : add more tests
 
         # break at entry point - never fail
         elf = get_elf_headers()
@@ -1082,12 +1172,18 @@ class ContextCommand(GenericCommand):
     _syntax_  = "%s" % _cmdline_
 
     old_registers = {}
+    nb_registers_per_line = 4
+    nb_lines_stack = 5
+    nb_lines_backtrace = 5
+    nb_lines_code  = 6
+
 
     def do_invoke(self, argv):
         if not is_alive():
             warn("No debugging session active")
             return
 
+        clear_screen()
         self.context_regs()
         self.context_stack()
         self.context_code()
@@ -1103,10 +1199,7 @@ class ContextCommand(GenericCommand):
 
         for reg in all_registers():
             new_value = gdb.parse_and_eval(reg)
-            if reg in self.old_registers:
-                old_value = self.old_registers[reg]
-            else:
-                old_value = 0x00
+            old_value = self.old_registers[reg] if reg in self.old_registers else 0x00
 
             if new_value.type.code == gdb.TYPE_CODE_INT:
                 t_long = gdb.lookup_type("unsigned long")
@@ -1123,26 +1216,27 @@ class ContextCommand(GenericCommand):
             i+=1
             print (l),
 
-            if i and i%4==0: print("") # show 4 registers per line
+            if (i > 0) and (i % self.nb_registers_per_line==0) :
+                print("")
 
-        print
+        print()
         return
 
     def context_stack(self):
         print (Color.BLUE + "-"*80 + Color.BOLD + "[stack]" + Color.NORMAL)
         read_from = gdb.parse_and_eval("$sp")
-        mem = read_memory(read_from, 0x50)
+        mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
         print ( hexdump(mem) )
         return
 
     def context_code(self):
         print (Color.BLUE + "-"*80 + Color.BOLD + "[code]"  + Color.NORMAL)
-        gdb.execute("x/6i $pc")
+        gdb.execute("x/%di $pc" % self.nb_lines_code)
         return
 
     def context_trace(self):
         print (Color.BLUE + "-"*80 + Color.BOLD + "[trace]" + Color.NORMAL)
-        gdb.execute("backtrace 5")
+        gdb.execute("backtrace %d" % self.nb_lines_backtrace)
         return
 
     def update_registers(self):
@@ -1173,7 +1267,7 @@ class HexdumpCommand(GenericCommand):
 
         fmt = argv[0]
 
-        read_from = long(gdb.parse_and_eval( argv[1] ))
+        read_from = long(gdb.parse_and_eval(argv[1])) & 0xFFFFFFFFFFFFFFFF
         if len(argv) == 2:
             read_len = 0x20
         else:
@@ -1250,9 +1344,9 @@ class DereferenceCommand(GenericCommand):
                 deref = DereferenceCommand.dereference(old_deref)
                 value = long(deref)
 
-                msg.append( '"%s"' % format_address(long(deref)) )
+                msg.append( '%s' % format_address(long(deref)) )
                 if is_readable_string(value):
-                    msg.append( read_string(value) )
+                    msg.append( '"%s"' % read_string(value) )
                     break
                 old_deref = deref
 
@@ -1804,6 +1898,7 @@ class GEFCommand(gdb.Command):
                         ROPgadgetCommand,
                         InspectStackCommand,
                         CtfExploitTemplaterCommand,
+                        ShellcodeCommand,
 
                         # add new commands here
                         ]
