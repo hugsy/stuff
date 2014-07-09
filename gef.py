@@ -349,6 +349,8 @@ def is_readable_string(address):
     * and values for each byte is [0x20, 0x7F]
     """
     buffer = read_memory_until_null(address)
+    if len(buffer) == 0:
+        return False
     for c in buffer:
         if not (0x20 <= ord(c) < 0x7f):
             return False
@@ -750,8 +752,7 @@ class GenericCommand(gdb.Command):
 
 
 class ShellcodeCommand(GenericCommand):
-    """ ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API
-    to download shellcodes """
+    """ ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API to download shellcodes """
 
     _cmdline_ = "shellcode"
     _syntax_  = "%s (help|search|get)" % _cmdline_
@@ -899,6 +900,8 @@ class ROPgadgetCommand(GenericCommand):
             offset = 0x00
             outfile = None
             thumb = None
+            rawArch = None
+            rawMode = None
 
         args = FakeArgs()
         self.parse_args(args, argv)
