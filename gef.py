@@ -1,5 +1,17 @@
 ################################################################################
-# gef - GDB Enhanced Features
+# GEF - GDB Enhanced Features for Exploiters & Reverse-Engineers
+#
+# by  @_hugsy_
+#
+# GEF provides additional functions to GDB using its powerful Python API. Some
+# functions were inspired by PEDA (https://github.com/longld/peda) which is totally
+# awesome *but* is x86 (32/64bits) specific, whereas GEF supports almost all archs
+# supported by GDB.
+#
+# Notes:
+# * Since GEF relies on /proc for mapping addresses in memory or other features, it
+#   cannot work on hardened configurations (such as GrSec)
+# * GEF supports kernel debugging in a limit way (please report crashes & bugs)
 #
 # Tested on
 # * x86-32/x86-64 (even though you should totally use `gdb-peda` (https://github.com/longld/peda) instead)
@@ -8,24 +20,23 @@
 # * powerpc
 # * sparc
 #
-# @_hugsy_
 #
-# tested on gdb 7.x / python 2.6 & 2.7
+# Tested on gdb 7.x / python 2.6 & 2.7 (Python 3 to come)
 #
-# to use: in gdb, type `source /path/to/gef.py'
+# To start using: in gdb, type `source /path/to/gef.py`
 #
 #
-# todo:
+# ToDo:
 # - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
 # - sort dereference addresses by type (int/ptr/func/etc.)
 #
-# todo commands:
+# ToDo commands:
 # - patch N bytes in mem (\xcc, \x90, )
 # - edit gef config at runtime
 # - finish FormatStringSearchCommand
 #
-# todo arch:
+# ToDo arch:
 # - sparc64
 #
 #
@@ -131,6 +142,46 @@ class Address:
     pass
 
 
+class Permission:
+    READ = 4
+    WRITE = 2
+    EXECUTE = 1
+
+    def __init__(self, *args, **kwargs):
+        self.value = 0
+        return
+
+    def __str__(self):
+        perm_str = ""
+        perm_str += "r" if self.value & Permission.READ else "-"
+        perm_str += "w" if self.value & Permission.WRITE else "-"
+        perm_str += "x" if self.value & Permission.EXECUTE else "-"
+        return perm_str
+
+    @staticmethod
+    def from_info_sections(*args):
+        p = Permission()
+        for arg in args:
+            if "READONLY" in arg:
+                p.value += Permission.READ
+            if "DATA" in arg:
+                p.value += Permission.WRITE
+            if "CODE" in arg:
+                p.value += Permission.EXECUTE
+        return p
+
+    @staticmethod
+    def from_process_maps(perm_str):
+        p = Permission()
+        if perm_str[0] == "r":
+            p.value += Permission.READ
+        if perm_str[1] == "w":
+            p.value += Permission.WRITE
+        if perm_str[2] == "x":
+            p.value += Permission.EXECUTE
+        return p
+
+
 class Section:
     page_start      = None
     page_end        = None
@@ -138,6 +189,13 @@ class Section:
     permission      = None
     inode           = None
     path            = None
+
+    def __init__(self, *args, **kwargs):
+        attrs = ["page_start", "page_end", "offset", "permission", "inode", "path"]
+        for attr in attrs:
+            value = kwargs[attr] if attr in kwargs else None
+            setattr(self, attr, value)
+        return
 
 
 class Zone:
@@ -417,8 +475,8 @@ def get_process_maps():
     pid = get_pid()
     sections = []
 
-    with open('/proc/%d/maps' % pid) as f:
-
+    try:
+        f = open('/proc/%d/maps' % pid)
         while True:
             line = f.readline()
             if len(line) == 0:
@@ -438,17 +496,62 @@ def get_process_maps():
             addr_start, addr_end = int(addr_start, 16), int(addr_end, 16)
             off = int(off, 16)
 
-            section = Section()
-            section.page_start  = addr_start
-            section.page_end    = addr_end
-            section.offset      = off
-            section.permission  = perm
-            section.inode       = inode
-            section.path        = pathname
+            perm = Permission.from_process_maps(perm)
+
+            section = Section(page_start  = addr_start,
+                              page_end    = addr_end,
+                              offset      = off,
+                              permission  = perm,
+                              inode       = inode,
+                              path        = pathname)
 
             sections.append( section )
 
+    except IOError:
+        info("/proc/maps not available, hardened or in kernel, trying maintenance")
+        sections = get_info_sections()
+
     return sections
+
+
+@memoize
+def get_info_sections():
+    sections = []
+    stream = cStringIO.StringIO(gdb.execute("maintenance info sections", to_string=True))
+
+    while True:
+        line = stream.readline()
+        if len(line) == 0:
+            break
+
+        line = re.sub('\s+',' ', line.strip())
+
+        try:
+            blobs = [x.strip() for x in line.split(' ')]
+            index = blobs[0][1:-1]
+            addr_start, addr_end = [ int(x, 16) for x in blobs[1].split("->") ]
+            at = blobs[2]
+            off = int(blobs[3][:-1], 16)
+            path = blobs[4]
+            inode = ""
+            perm = Permission.from_info_sections(blobs[5:])
+
+            section = Section(page_start  = addr_start,
+                              page_end    = addr_end,
+                              offset      = off,
+                              permission  = perm,
+                              inode       = inode,
+                              path        = path)
+
+            sections.append( section )
+
+        except IndexError:
+            continue
+        except ValueError:
+            continue
+
+    return sections
+
 
 @memoize
 def get_info_files():
@@ -456,35 +559,35 @@ def get_info_files():
     stream = cStringIO.StringIO(gdb.execute("info files", to_string=True))
 
     while True:
-            line = stream.readline()
-            if len(line) == 0:
-                break
+        line = stream.readline()
+        if len(line) == 0:
+            break
 
-            try:
-                blobs = [x.strip() for x in line.split(' ')]
-                addr_start = int(blobs[0], 16)
-                addr_end = int(blobs[2], 16)
-                section_name = blobs[4]
+        try:
+            blobs = [x.strip() for x in line.split(' ')]
+            addr_start = int(blobs[0], 16)
+            addr_end = int(blobs[2], 16)
+            section_name = blobs[4]
 
-                if len(blobs) == 7:
-                    filename = blobs[6]
-                else:
-                    filename = get_filename()
+            if len(blobs) == 7:
+                filename = blobs[6]
+            else:
+                filename = get_filename()
 
 
-            except ValueError:
-                continue
+        except ValueError:
+            continue
 
-            except IndexError:
-                continue
+        except IndexError:
+            continue
 
-            info = Zone()
-            info.name = section_name
-            info.zone_start = addr_start
-            info.zone_end = addr_end
-            info.filename = filename
+        info = Zone()
+        info.name = section_name
+        info.zone_start = addr_start
+        info.zone_end = addr_end
+        info.filename = filename
 
-            infos.append( info )
+        infos.append( info )
 
     stream.close()
     return infos
@@ -493,6 +596,10 @@ def get_info_files():
 def process_lookup_address(address):
     if not is_alive():
         err("Process is not running")
+        return None
+
+    if is_in_kernel(address):
+        err("Cannot map kernel addresses")
         return None
 
     for sect in get_process_maps():
@@ -652,6 +759,10 @@ def clear_screen():
     gdb.execute("shell clear")
     return
 
+
+def is_in_kernel(address):
+    memalign = get_memory_alignment()-1
+    return (address >> memalign) & 0x1
 
 #
 # breakpoints
@@ -1472,6 +1583,8 @@ class VMMapCommand(GenericCommand):
             return
 
         vmmap = get_process_maps()
+        if vmmap is None or len(vmmap)==0:
+            return
 
         if is_elf64():
             print ("%18s %18s %18s %4s %s" % ("Start", "End", "Offset", "Perm", "Path"))
@@ -1482,10 +1595,11 @@ class VMMapCommand(GenericCommand):
             l.append( format_address( entry.page_start ))
             l.append( format_address( entry.page_end ))
             l.append( format_address( entry.offset ))
-            if "rwx" in entry.permission:
-                l.append( Color.RED+Color.BOLD+entry.permission+Color.NORMAL )
+
+            if entry.permission.value == (Permission.READ|Permission.WRITE|Permission.EXECUTE) :
+                l.append( Color.boldify(Color.redify(str(entry.permission))) )
             else:
-                l.append( entry.permission )
+                l.append( str(entry.permission) )
             l.append( entry.path )
 
             print " ".join(l)
@@ -1529,13 +1643,12 @@ class XAddressInfoCommand(GenericCommand):
 
         for addr in argv:
             try:
-                addr = long(gdb.parse_and_eval(addr))
+                addr = long(gdb.parse_and_eval(addr)) & 0xFFFFFFFFFFFFFFFF
                 print titlify("xinfo: %#x" % addr)
-
                 self.infos(addr)
 
-            except gdb.error, ve:
-                err("Exception raised: %s" % ve)
+            except gdb.error as gdb_err:
+                err("Exception raised: %s" % gdb_err)
                 continue
         return
 
@@ -2007,7 +2120,7 @@ if __name__  == "__main__":
     gdb.execute("set input-radix 0x10")
     gdb.execute("set height 0")
     gdb.execute("set width 0")
-    gdb.execute("set prompt %s" % Color.RED+GEF_PROMPT+Color.NORMAL)
+    gdb.execute("set prompt %s" % Color.redify(GEF_PROMPT))
     gdb.execute("set follow-fork-mode child")
 
     # gdb history
