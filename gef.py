@@ -1053,15 +1053,12 @@ class ROPgadgetCommand(GenericCommand):
 
         args = FakeArgs()
         self.parse_args(args, argv)
-
-        if args.binary is None:
-            args.binary = get_filename()
-
         ROPgadget.Core( args ).analyze()
         return
 
 
     def parse_args(self, args, argv):
+        info("ROPGadget options")
         # options format is 'option_name1=option_value1'
         for opt in argv:
             name, value = opt.split("=", 1)
@@ -1069,13 +1066,25 @@ class ROPgadgetCommand(GenericCommand):
                 if name == "console":
                     continue
                 elif name == "depth":
-                    value = int(depth)
-                    if depth < 2:
-                        depth = 2
+                    value = int(value)
+                    depth = value
+                    info("Using depth %d" % depth)
                 elif name == "offset":
                     value = int(value, 16)
+                    info("Using offset %#x" % value)
+                elif name == "range":
+                    off_min = int(value.split('-')[0], 16)
+                    off_max = int(value.split('-')[1], 16)
+                    if off_max < off_min:
+                        raise ValueError("Value2 must be higher that Value1")
+                    info("Using range [%#x:%#x] (%ld bytes)" % (off_min, off_max, (off_max-off_min)))
 
                 setattr(args, name, value)
+
+        if not hasattr(args, "binary") or getattr(args, "binary") is None:
+            setattr(args, "binary", get_filename())
+
+        info("Using binary: %s" % args.binary)
         return
 
 
