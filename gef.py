@@ -114,6 +114,19 @@ class Color:
     BOLD           = "\x1b[1m"
     UNDERLINE      = "\x1b[4m"
 
+    @staticmethod
+    def redify(msg): return Color.RED + msg + Color.NORMAL
+    @staticmethod
+    def greenify(msg): return Color.GREEN + msg + Color.NORMAL
+    @staticmethod
+    def blueify(msg): return Color.BLUE + msg + Color.NORMAL
+    @staticmethod
+    def yellowify(msg): return Color.YELLOW + msg + Color.NORMAL
+    @staticmethod
+    def boldify(msg): return Color.BOLD + msg + Color.NORMAL
+
+
+
 
 # helpers
 class Address:
@@ -275,37 +288,36 @@ def get_arch():
 
 
 def arm_registers():
-    return ["$r0", "$r1", "$r2", "$r3", "$r4", "$r5", "$r6",
-            "$r7", "$r8", "$r9", "$r10", "$r11", "$r12", "$sp",
-            "$lr", "$pc", "$cpsr", ]
+    return ["$r0  ", "$r1  ", "$r2  ", "$r3  ", "$r4  ", "$r5  ", "$r6  ",
+            "$r7  ", "$r8  ", "$r9  ", "$r10 ", "$r11 ", "$r12 ", "$sp  ",
+            "$lr  ", "$pc  ", "$cpsr", ]
 
 
 def x86_64_registers():
-    return [ "$rax", "$rcx", "$rdx","$rbx","$rsp", "$rbp","$rsi",
-             "$rdi","$rip", "$eflags", "$cs", "$ss", "$ds", "$es",
-             "$fs", "$gs", ]
+    return [ "$rax   ", "$rcx   ", "$rdx   ", "$rbx   ", "$rsp   ", "$rbp   ","$rsi   ",
+             "$rdi   ", "$rip   ", "$cs    ", "$ss    ", "$ds    ", "$es    ",
+             "$fs    ", "$gs    ", "$eflags", ]
 
 
 def x86_32_registers():
-    return [ "$eax", "$ecx", "$edx","$ebx","$esp", "$ebp","$esi",
-             "$edi","$eip", "$eflags", "$cs", "$ss", "$ds", "$es",
-             "$fs", "$gs", ]
+    return [ "$eax   ", "$ecx   ", "$edx   ", "$ebx   ", "$esp   ", "$ebp   ", "$esi   ",
+             "$edi   ", "$eip   ", "$cs    ", "$ss    ", "$ds    ", "$es    ",
+             "$fs    ", "$gs    ", "$eflags", ]
 
 
 def powerpc_registers():
-    return ["$r0", "$r1", "$r2", "$r3", "$r4", "$r5", "$r6", "$r7",
-            "$r8", "$r9", "$r10", "$r11", "$r12", "$r13", "$r14", "$r15",
-            "$r16", "$r17", "$r18", "$r19", "$r20", "$r21", "$r22", "$r23",
-            "$r24", "$r25", "$r26", "$r27", "$r28", "$r29", "$r30", "$r31",
-            "$pc", "$msr", "$cr", "$lr", "$ctr", "$xer", "$orig_r3", "$trap" ]
+    return ["$r0  ", "$r1  ", "$r2  ", "$r3  ", "$r4  ", "$r5  ", "$r6  ", "$r7  ",
+            "$r8  ", "$r9  ", "$r10 ", "$r11 ", "$r12 ", "$r13 ", "$r14 ", "$r15 ",
+            "$r16 ", "$r17 ", "$r18 ", "$r19 ", "$r20 ", "$r21 ", "$r22 ", "$r23 ",
+            "$r24 ", "$r25 ", "$r26 ", "$r27 ", "$r28 ", "$r29 ", "$r30 ", "$r31 ",
+            "$pc  ", "$msr ", "$cr  ", "$lr  ", "$ctr ", "$xer ", "$trap" ]
 
 def sparc_registers():
-    return ["$g0", "$g1", "$g2", "$g3", "$g4", "$g5", "$g6", "$g7",
-            "$o0", "$o1", "$o2", "$o3", "$o4", "$o5",
-            "$l0", "$l1", "$l2", "$l3", "$l4", "$l5", "$l6", "$l7",
-            "$i0", "$i1", "$i2", "$i3", "$i4", "$i5",
-            "$pc", "$sp", "$fp", "$psr",
-            ]
+    return ["$g0 ", "$g1 ", "$g2 ", "$g3 ", "$g4 ", "$g5 ", "$g6 ", "$g7 ",
+            "$o0 ", "$o1 ", "$o2 ", "$o3 ", "$o4 ", "$o5 ",
+            "$l0 ", "$l1 ", "$l2 ", "$l3 ", "$l4 ", "$l5 ", "$l6 ", "$l7 ",
+            "$i0 ", "$i1 ", "$i2 ", "$i3 ", "$i4 ", "$i5 ",
+            "$pc ", "$sp ", "$fp ", "$psr", ]
 
 def all_registers():
     if is_arm():
@@ -639,6 +651,7 @@ def format_address(addr):
 
 def clear_screen():
     gdb.execute("shell clear")
+    return
 
 
 #
@@ -749,6 +762,27 @@ class GenericCommand(gdb.Command):
         # return
 
 
+class DetailRegistersCommand(GenericCommand):
+    """Display full details on registers value."""
+
+    _cmdline_ = "reg"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        if not is_alive():
+            warn("No debugging session active")
+            return
+
+        for reg in all_registers():
+            addr = gdb.parse_and_eval(reg)
+            addrs = DereferenceCommand.dereference_from(addr)
+
+            line = Color.greenify(reg) + ": "
+            line+= Color.boldify(format_address(addr)) + " -> "
+            line+= " -> ".join(addrs)
+            print(line)
+
+        return
 
 
 class ShellcodeCommand(GenericCommand):
@@ -835,7 +869,7 @@ class ShellcodeCommand(GenericCommand):
 
 
 class CtfExploitTemplaterCommand(GenericCommand):
-    """TemplaceCommand: add description here."""
+    """Generates a ready-to-use exploit template for CTF."""
 
     _cmdline_ = "ctf-exploit-templater"
     _syntax_  = "%s HOST PORT [/path/exploit.py]" % _cmdline_
@@ -1197,48 +1231,50 @@ class ContextCommand(GenericCommand):
         return
 
     def context_regs(self):
-        print (Color.BLUE + "-"*80 + Color.BOLD + "[regs]" + Color.NORMAL)
+        print (Color.boldify( Color.blueify("-"*80 + "[regs]") ))
         i = 0
+        l = ""
 
         for reg in all_registers():
             new_value = gdb.parse_and_eval(reg)
             old_value = self.old_registers[reg] if reg in self.old_registers else 0x00
 
-            if new_value.type.code == gdb.TYPE_CODE_INT:
-                t_long = gdb.lookup_type("unsigned long")
-                addr = long(new_value.cast(t_long))
-
-                l = "%s  " % (Color.GREEN + reg + Color.NORMAL)
-                if new_value == old_value:
-                    l += "%s " % (format_address(addr) )
-                else:
-                    l += "%s%s%s " % (Color.RED, format_address(addr), Color.NORMAL)
+            l += "%s  " % (Color.greenify(reg))
+            if new_value.type.code == gdb.TYPE_CODE_FLAGS:
+                l += "%s " % (new_value)
             else:
-                l= "%10s  %s " % (Color.GREEN + reg + Color.NORMAL, new_value)
+                if new_value.type.code == gdb.TYPE_CODE_PTR:
+                    new_value = long(new_value)
+                    old_value = long(old_value)
+
+                if long(new_value) == long(old_value):
+                    l += "%s " % (format_address(new_value))
+                else:
+                    l += "%s " % Color.redify(format_address(new_value))
 
             i+=1
-            print (l),
 
             if (i > 0) and (i % self.nb_registers_per_line==0) :
-                print("")
+                print(l)
+                l = ""
 
-        print()
+        print("")
         return
 
     def context_stack(self):
-        print (Color.BLUE + "-"*80 + Color.BOLD + "[stack]" + Color.NORMAL)
+        print (Color.boldify( Color.blueify("-"*80 + "[stack]")))
         read_from = gdb.parse_and_eval("$sp")
         mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
         print ( hexdump(mem) )
         return
 
     def context_code(self):
-        print (Color.BLUE + "-"*80 + Color.BOLD + "[code]"  + Color.NORMAL)
+        print (Color.boldify( Color.blueify("-"*80 + "[code]")))
         gdb.execute("x/%di $pc" % self.nb_lines_code)
         return
 
     def context_trace(self):
-        print (Color.BLUE + "-"*80 + Color.BOLD + "[trace]" + Color.NORMAL)
+        print (Color.boldify( Color.blueify("-"*80 + "[trace]")))
         gdb.execute("backtrace %d" % self.nb_lines_backtrace)
         return
 
@@ -1902,6 +1938,7 @@ class GEFCommand(gdb.Command):
                         InspectStackCommand,
                         CtfExploitTemplaterCommand,
                         ShellcodeCommand,
+                        DetailRegistersCommand,
 
                         # add new commands here
                         ]
