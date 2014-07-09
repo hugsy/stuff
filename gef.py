@@ -368,6 +368,7 @@ def is_readable_string(address):
             return False
     return True
 
+
 def read_string(address):
     if not is_readable_string(address):
         raise ValueError("Content at address `%#x` is not a string" % address)
@@ -773,13 +774,17 @@ class DetailRegistersCommand(GenericCommand):
             warn("No debugging session active")
             return
 
-        for reg in all_registers():
-            addr = gdb.parse_and_eval(reg)
+        for regname in all_registers():
+            reg = gdb.parse_and_eval(regname)
+            addr = long(reg)
             addrs = DereferenceCommand.dereference_from(addr)
 
-            line = Color.greenify(reg) + ": "
-            line+= Color.boldify(format_address(addr)) + " -> "
-            line+= " -> ".join(addrs)
+            line = Color.greenify(regname) + ": "
+            if reg.type.code == gdb.TYPE_CODE_FLAGS:
+                line+= "%#x --> %s" % (addr, Color.boldify(str(reg)))
+            else:
+                line+= Color.boldify(format_address(addr)) + " -> "
+                line+= " -> ".join(addrs)
             print(line)
 
         return
@@ -1390,12 +1395,13 @@ class DereferenceCommand(GenericCommand):
                 old_deref = deref
 
             except OverflowError as e:
-                msg.append( "%d" % int(deref) )
+                m = "%d" % int(deref)
+                msg.append( m )
             except gdb.MemoryError as e:
-                msg.append(" -> %d" % int(deref) )
+                m = "%d" % int(deref)
+                msg.append( m )
             except Exception as e:
                 err("Unexpected exception: " + e)
-                pass
             finally:
                 break
 
