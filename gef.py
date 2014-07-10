@@ -51,7 +51,7 @@ import re
 import tempfile
 import os
 import binascii
-
+import HTMLParser
 import gdb
 
 ROPGADGET_PATH = os.getenv("HOME") + "/code/ROPgadget"
@@ -936,7 +936,6 @@ class ShellcodeCommand(GenericCommand):
             self.search_shellcode(argv[1:])
             return
 
-        # get
         if argc == 1 or not argv[1].isdigit():
             err("Incorrect ID")
             return
@@ -976,7 +975,9 @@ class ShellcodeCommand(GenericCommand):
         info("Downloading shellcode id=%d" % sid)
         fd, fname = tempfile.mkstemp(suffix=".txt", prefix="%s-" % self._cmdline_, text=True, dir='/tmp')
         data = http.text.split("\n")[7:-11]
-        os.write(fd, "\n".join(data))
+        buf = "\n".join(data)
+        unesc_buf = HTMLParser.HTMLParser().unescape( buf )
+        os.write(fd, unesc_buf)
         os.close(fd)
         info("Shellcode written as '%s'" % fname)
         return
