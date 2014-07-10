@@ -35,6 +35,7 @@
 # - patch N bytes in mem (\xcc, \x90, )
 # - edit gef config at runtime
 # - finish FormatStringSearchCommand
+# - get symbols
 #
 # ToDo arch:
 # - sparc64
@@ -870,6 +871,36 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+
+class SolveKernelSymbolCommand(GenericCommand):
+    """Get kernel address"""
+
+    _cmdline_ = "ksymaddr"
+    _syntax_  = "%s SymbolToSearch" % _cmdline_
+
+    def do_invoke(self, argv):
+        if len(argv) != 1:
+            self.usage()
+            return
+
+        sym = argv[0]
+        with open("/proc/kallsyms", "r") as f:
+            for line in f.xreadlines():
+                try:
+                    symaddr, symtype, symname = line.strip().split(" ", 3)
+                    symaddr = int(symaddr, 16)
+                    if symname == sym:
+                        ok("Found matching symbol for '%s' at %#x (type=%s)" % (sym, symaddr, symtype))
+                        return
+
+                except ValueError:
+                    pass
+
+
+        err("No match for '%s'", sym)
+        return
 
 
 class DetailRegistersCommand(GenericCommand):
@@ -2066,6 +2097,7 @@ class GEFCommand(gdb.Command):
                         CtfExploitTemplaterCommand,
                         ShellcodeCommand,
                         DetailRegistersCommand,
+                        SolveKernelSymbolCommand,
 
                         # add new commands here
                         ]
