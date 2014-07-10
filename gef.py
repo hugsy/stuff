@@ -35,7 +35,6 @@
 # - patch N bytes in mem (\xcc, \x90, )
 # - edit gef config at runtime
 # - finish FormatStringSearchCommand
-# - get symbols
 #
 # ToDo arch:
 # - sparc64
@@ -837,8 +836,7 @@ class GenericCommand(gdb.Command):
                 raise NotImplemented("Invalid class: missing '%s'" % attr)
 
         self.__doc__  += "\n" + "Syntax: " + self._syntax_
-        super(GenericCommand, self).__init__(self._cmdline_, gdb.COMMAND_NONE)
-
+        super(GenericCommand, self).__init__(self._cmdline_, gdb.COMMAND_OBSCURE, gdb.COMPLETE_NONE, True)
         self.post_load()
 
         return
@@ -872,6 +870,107 @@ class GenericCommand(gdb.Command):
     # def do_invoke(self, argv):
         # return
 
+__aliases__ = {}
+
+class AliasCommand(GenericCommand):
+    """GEF defined aliases"""
+
+    _cmdline_ = "gef-alias"
+    _syntax_  = "%s (help|set|show|do|rm)" % _cmdline_
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+        if argc == 0:
+            err("Missing action")
+            self.usage()
+            return
+        return
+
+class AliasSetCommand(GenericCommand):
+    """GEF add alias command"""
+    _cmdline_ = "gef-alias set"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+        if argc < 2:
+            err("'%s set' requires at least 2 params")
+            return
+        alias_name = argv[0]
+        alias_cmds  = " ".join(argv[1:]).split(";")
+
+        if alias_name in __aliases__.keys():
+            warn("Replacing alias '%s'" % alias_name)
+        __aliases__[ alias_name ] = alias_cmds
+        ok("'%s': '%s'" % (alias_name, "; ".join(alias_cmds)))
+        return
+
+class AliasUnsetCommand(GenericCommand):
+    """GEF remove alias command"""
+    _cmdline_ = "gef-alias unset"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        if len(argv) != 1:
+            err("'%s' requires 1 param" % self._cmdline_)
+            return
+        del __aliases__[ argv[1] ]
+        return
+
+class AliasShowCommand(GenericCommand):
+    """GEF show alias command"""
+    _cmdline_ = "gef-alias show"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        for alias_name in __aliases__.keys():
+            print("'%s'\t'%s'" % (alias_name, ";".join(__aliases__[alias_name])))
+        return
+
+class AliasDoCommand(GenericCommand):
+    """GEF do alias command"""
+    _cmdline_ = "gef-alias do"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+        if argc != 1:
+            err("'%s do' requires 1 param")
+            return
+
+        alias_name = argv[0]
+        if alias_name not in __aliases__.keys():
+            err("No alias '%s'" % alias_name)
+            return
+
+        alias_cmds = __aliases__[alias_name]
+        for cmd in alias_cmds:
+            try:
+                if " >> " in cmd:
+                    cmd, outfile = cmd.split(" >> ")
+                    cmd = cmd.strip()
+                    outfile = outfile.strip()
+
+                    with open(outfile, "a") as f:
+                        lines_out = gdb.execute(cmd, to_string=True)
+                        f.write(lines_out)
+
+                elif " > " in cmd:
+                    cmd, outfile = cmd.split(" > ")
+                    cmd = cmd.strip()
+                    outfile = outfile.strip()
+
+                    with open(outfile, "w") as f:
+                        lines_out = gdb.execute(cmd, to_string=True)
+                        f.write(lines_out)
+
+                else:
+                    gdb.execute(cmd)
+
+            except:
+                continue
+
+        return
 
 
 class SolveKernelSymbolCommand(GenericCommand):
@@ -885,6 +984,7 @@ class SolveKernelSymbolCommand(GenericCommand):
             self.usage()
             return
 
+        found = False
         sym = argv[0]
         with open("/proc/kallsyms", "r") as f:
             for line in f.xreadlines():
@@ -893,13 +993,15 @@ class SolveKernelSymbolCommand(GenericCommand):
                     symaddr = int(symaddr, 16)
                     if symname == sym:
                         ok("Found matching symbol for '%s' at %#x (type=%s)" % (sym, symaddr, symtype))
-                        return
-
+                        found = True
+                    if sym in symname:
+                        warn("Found partial match for '%s' at %#x (type=%s): %s" % (sym, symaddr, symtype, symname))
+                        found = True
                 except ValueError:
                     pass
 
-
-        err("No match for '%s'", sym)
+        if not found:
+            err("No match for '%s'" % sym)
         return
 
 
@@ -2099,6 +2201,11 @@ class GEFCommand(gdb.Command):
                         DetailRegistersCommand,
                         SolveKernelSymbolCommand,
 
+                        AliasCommand,
+                        AliasShowCommand,
+                        AliasSetCommand,
+                        AliasUnsetCommand,
+                        AliasDoCommand,
                         # add new commands here
                         ]
 
@@ -2140,11 +2247,15 @@ class GEFCommand(gdb.Command):
         print titlify("GEF - GDB Enhanced Features")
 
         for (cmd, class_name) in self.loaded_cmds:
+            if " " in cmd:
+                # do not print out subcommands in main help
+                continue
             try:
-                msg = "%-20s -- %s" % (cmd, Color.greenify( class_name.__doc__ ))
+                doc = class_name.__doc__ if hasattr(class_name, "__doc__") else ""
+                msg = "%-20s -- %s" % (cmd, Color.greenify( doc ))
 
             except AttributeError:
-                msg = "%-20s: <Unspecified>" % (cmd,)
+                msg = "%-20s -- <Unspecified>" % (cmd, )
 
             print ("%s" % msg)
 
@@ -2154,7 +2265,7 @@ class GEFCommand(gdb.Command):
 
 
 if __name__  == "__main__":
-    GEF_PROMPT = "gef> "
+    GEF_PROMPT = Color.redify("gef> ")
 
     # setup config
     gdb.execute("set confirm off")
@@ -2163,7 +2274,7 @@ if __name__  == "__main__":
     gdb.execute("set input-radix 0x10")
     gdb.execute("set height 0")
     gdb.execute("set width 0")
-    gdb.execute("set prompt %s" % Color.redify(GEF_PROMPT))
+    gdb.execute("set prompt %s" % GEF_PROMPT)
     gdb.execute("set follow-fork-mode child")
 
     # gdb history
@@ -2191,7 +2302,7 @@ if __name__  == "__main__":
 
     # context
     gdb.execute("alias -a argv = show args")
-    gdb.execute("alias -a stack = info stack")
+    gdb.execute("alias -a kp = info stack")
 
     try:
         # this will raise a gdb.error unless we're on x86
@@ -2203,6 +2314,8 @@ if __name__  == "__main__":
 
     # load GEF
     GEFCommand()
+    # gdb.execute("alias -- ! = gef-alias do")
+
 
     # post-loading stuff
     define_user_command("hook-stop", "context")
