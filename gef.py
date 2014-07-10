@@ -1545,9 +1545,9 @@ class ASLRCommand(GenericCommand):
 
             msg = "ASLR is currently "
             if ret[i+25:].strip() == "on.":
-                msg+= Color.RED + "disabled" + Color.NORMAL
+                msg+= Color.redify( "disabled" )
             else:
-                msg+= Color.GREEN + "enabled" + Color.NORMAL
+                msg+= Color.green( "enabled" )
 
             print ("%s" % msg)
 
@@ -1594,6 +1594,7 @@ class VMMapCommand(GenericCommand):
 
         vmmap = get_process_maps()
         if vmmap is None or len(vmmap)==0:
+            err("No address mapping information found")
             return
 
         if is_elf64():
@@ -1920,7 +1921,7 @@ class InspectStackCommand(GenericCommand):
             addr = gdb.Value(cur_addr)
             addrs = DereferenceCommand.dereference_from(cur_addr)
 
-            msg = Color.BOLD+Color.BLUE + format_address(cur_addr) + Color.NORMAL
+            msg = Color.boldify(Color.blueify( format_address(cur_addr) ))
             msg += ": "
             msg += " -> ".join(addrs)
             print(msg)
@@ -1971,17 +1972,17 @@ class ChecksecCommand(GenericCommand):
             if re.search(pattern, line):
                 buf += Color.GREEN
                 if is_match:
-                    buf += Color.GREEN + "Yes" + Color.NORMAL
+                    buf += Color.greenify("Yes")
                 else:
-                    buf += Color.RED + "No" + Color.NORMAL
+                    buf += Color.redify("No")
                 found = True
                 break
 
         if not found:
             if is_match:
-                buf+= Color.RED + "No"+ Color.NORMAL
+                buf+= Color.redify("No")
             else:
-                buf+= Color.GREEN + "Yes"+ Color.NORMAL
+                buf+= Color.greenify("Yes")
 
         print ("%s" % buf)
         return
@@ -2098,8 +2099,8 @@ class GEFCommand(gdb.Command):
             except Exception, e:
                 err("Failed to load `%s`: %s" % (cmd, e.message))
 
-        print("%s, type `%s' to start" % (Color.GREEN + "gef loaded" +Color.NORMAL,
-                                          Color.RED + "gef help" +Color.NORMAL))
+        print("%s, type `%s' to start" % (Color.greenify("gef loaded"),
+                                          Color.redify("gef help")))
         return
 
 
@@ -2108,7 +2109,7 @@ class GEFCommand(gdb.Command):
 
         for (cmd, class_name) in self.loaded_cmds:
             try:
-                msg = "%-20s -- %s" % (cmd, Color.GREEN+class_name.__doc__+Color.NORMAL)
+                msg = "%-20s -- %s" % (cmd, Color.greenify( class_name.__doc__ ))
 
             except AttributeError:
                 msg = "%-20s: <Unspecified>" % (cmd,)
