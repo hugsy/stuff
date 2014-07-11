@@ -387,7 +387,7 @@ def all_registers():
     elif is_sparc():
         return sparc_registers()
     else:
-        raise GefUnsupportedOS("OS type is currently not supported")
+        raise GefUnsupportedOS("OS type is currently not supported: %s" % get_arch())
 
 
 def read_memory(addr, length=0x10):
@@ -879,14 +879,13 @@ class AliasCommand(GenericCommand):
     """GEF defined aliases"""
 
     _cmdline_ = "gef-alias"
-    _syntax_  = "%s (help|set|show|do|rm)" % _cmdline_
+    _syntax_  = "%s (set|show|do|unset)" % _cmdline_
 
     def do_invoke(self, argv):
         argc = len(argv)
         if argc == 0:
             err("Missing action")
             self.usage()
-            return
         return
 
 class AliasSetCommand(GenericCommand):
@@ -1480,7 +1479,7 @@ class ContextCommand(GenericCommand):
             warn("No debugging session active")
             return
 
-        clear_screen()
+        # clear_screen()
         self.context_regs()
         self.context_stack()
         self.context_code()
@@ -1551,11 +1550,12 @@ class HexdumpCommand(GenericCommand):
     _syntax_  = "%s (q|d|w|b) [LOCATION] [SIZE]" % _cmdline_
 
     def do_invoke(self, argv):
+        argc = len(argv)
         if not is_alive():
             warn("No debugging session active")
             return
 
-        if len(argv) < 2:
+        if argc < 2:
             self.usage()
             return
 
@@ -1564,9 +1564,9 @@ class HexdumpCommand(GenericCommand):
             return
 
         fmt = argv[0]
-
         read_from = long(gdb.parse_and_eval(argv[1])) & 0xFFFFFFFFFFFFFFFF
-        if len(argv) == 2:
+
+        if argc == 2:
             read_len = 0x20
         else:
             read_len = int(argv[2])
@@ -2275,7 +2275,7 @@ class GEFCommand(gdb.Command):
 
 
 if __name__  == "__main__":
-    GEF_PROMPT = Color.redify("gef> ")
+    GEF_PROMPT = Color.boldify(Color.redify("gef> "))
 
     # setup config
     gdb.execute("set confirm off")
