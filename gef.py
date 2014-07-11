@@ -1521,19 +1521,28 @@ class ContextCommand(GenericCommand):
 
     def context_stack(self):
         print (Color.boldify( Color.blueify("-"*80 + "[stack]")))
-        read_from = gdb.parse_and_eval("$sp")
-        mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
-        print ( hexdump(mem) )
+        try:
+            read_from = gdb.parse_and_eval("$sp")
+            mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
+            print ( hexdump(mem) )
+        except gdb.MemoryError:
+            err("Cannot read memory from $SP (corrupted stack pointer?)")
         return
 
     def context_code(self):
         print (Color.boldify( Color.blueify("-"*80 + "[code]")))
-        gdb.execute("x/%di $pc" % self.nb_lines_code)
+        try:
+            gdb.execute("x/%di $pc" % self.nb_lines_code)
+        except gdb.MemoryError:
+            err("Cannot disassemble from $PC")
         return
 
     def context_trace(self):
         print (Color.boldify( Color.blueify("-"*80 + "[trace]")))
-        gdb.execute("backtrace %d" % self.nb_lines_backtrace)
+        try:
+            gdb.execute("backtrace %d" % self.nb_lines_backtrace)
+        except gdb.MemoryError:
+            err("Cannot backtrace (corrupted frames?)")
         return
 
     def update_registers(self):
@@ -1547,7 +1556,7 @@ class HexdumpCommand(GenericCommand):
     """Display arranged hexdump (according to architecture endianness) of memory range."""
 
     _cmdline_ = "xd"
-    _syntax_  = "%s (q|d|w|b) [LOCATION] [SIZE]" % _cmdline_
+    _syntax_  = "%s (q|d|w|b) LOCATION [SIZE]" % _cmdline_
 
     def do_invoke(self, argv):
         argc = len(argv)
@@ -1566,10 +1575,7 @@ class HexdumpCommand(GenericCommand):
         fmt = argv[0]
         read_from = long(gdb.parse_and_eval(argv[1])) & 0xFFFFFFFFFFFFFFFF
 
-        if argc == 2:
-            read_len = 0x20
-        else:
-            read_len = int(argv[2])
+        read_len = int(argv[2]) if argc >= 2 else 0x20
 
         self._hexdump ( read_from, read_len, fmt )
 
