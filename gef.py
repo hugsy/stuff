@@ -826,7 +826,7 @@ CallerIs()
 class GenericCommand(gdb.Command):
     """Generic class for invoking commands"""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self.pre_load()
 
         required_attrs = ["do_invoke", "_cmdline_", "_syntax_"]
@@ -836,7 +836,10 @@ class GenericCommand(gdb.Command):
                 raise NotImplemented("Invalid class: missing '%s'" % attr)
 
         self.__doc__  += "\n" + "Syntax: " + self._syntax_
-        super(GenericCommand, self).__init__(self._cmdline_, gdb.COMMAND_OBSCURE, gdb.COMPLETE_NONE, True)
+
+        command_type = kwargs["command"] if "command" in kwargs else gdb.COMMAND_OBSCURE
+        complete_type = kwargs["complete"] if "complete" in kwargs else gdb.COMPLETE_NONE
+        super(GenericCommand, self).__init__(self._cmdline_, command_type, complete_type, True)
         self.post_load()
 
         return
@@ -1780,14 +1783,19 @@ class XAddressInfoCommand(GenericCommand):
     _syntax_  = "%s LOCATION" % _cmdline_
 
 
+    def __init__(self):
+         super(XAddressInfoCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         return
+
+
     def do_invoke (self, argv):
         if len(argv) < 1:
             err ("At least one valid address must be specified")
             return
 
-        for addr in argv:
+        for sym in argv:
             try:
-                addr = long(gdb.parse_and_eval(addr)) & 0xFFFFFFFFFFFFFFFF
+                addr = long(gdb.parse_and_eval(sym).address) & 0xFFFFFFFFFFFFFFFF
                 print titlify("xinfo: %#x" % addr)
                 self.infos(addr)
 
@@ -2071,6 +2079,11 @@ class ChecksecCommand(GenericCommand):
     _syntax_  = "%s (filename)" % _cmdline_
 
 
+    def __init__(self):
+         super(ChecksecCommand, self).__init__(complete=gdb.COMPLETE_FILENAME)
+         return
+
+
     def do_invoke(self, argv):
         argc = len(argv)
 
@@ -2201,11 +2214,8 @@ class GEFCommand(gdb.Command):
                         DetailRegistersCommand,
                         SolveKernelSymbolCommand,
 
-                        AliasCommand,
-                        AliasShowCommand,
-                        AliasSetCommand,
-                        AliasUnsetCommand,
-                        AliasDoCommand,
+                        AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
+
                         # add new commands here
                         ]
 
@@ -2297,7 +2307,6 @@ if __name__  == "__main__":
     gdb.execute("alias -a g = run")
 
     # memory access
-    # gdb.execute("alias -a u = x")
     gdb.execute("alias -a uf = disassemble")
 
     # context
@@ -2316,14 +2325,8 @@ if __name__  == "__main__":
     GEFCommand()
     # gdb.execute("alias -- ! = gef-alias do")
 
-
     # post-loading stuff
     define_user_command("hook-stop", "context")
-
-    # gdb.execute("alias -a -- dq = xd -q")
-    # gdb.execute("alias -a -- dd = xd -d")
-    # gdb.execute("alias dw = xd -w")
-    # gdb.execute("alias db = xd -b")
 
 
 ################################################################################
