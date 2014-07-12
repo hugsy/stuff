@@ -1658,10 +1658,8 @@ class DereferenceCommand(GenericCommand):
 
                 value = align_address( long(deref) )
                 infos = lookup_address(value)
-                if infos is None:
-                    break
-
-                if infos.section is None:
+                if infos is None or infos.section is None:
+                    msg.append( "%#x" % (long(deref)) )
                     break
 
                 section = infos.section
@@ -1672,20 +1670,16 @@ class DereferenceCommand(GenericCommand):
                     cmd = cmd.replace("=>", '')
                     cmd = re.sub('\s+',' ', cmd.strip())
                     msg.append( "%s" % cmd )
+                    break
 
-                elif section.permission.value & (Permission.READ):
+                elif section.permission.value & Permission.READ:
                     if is_readable_string(value):
                         msg.append( '"%s"' % read_string(value) )
+                        break
 
                 old_deref = deref
                 deref = DereferenceCommand.dereference(value)
 
-            except OverflowError as e:
-                m = "%d" % int(deref)
-                msg.append( m )
-            except gdb.MemoryError as e:
-                m = "%d" % int(deref)
-                msg.append( m )
             except Exception as e:
                 err("Unexpected exception: %s" % e)
 
@@ -2085,7 +2079,7 @@ class InspectStackCommand(GenericCommand):
 
     def inspect_stack(self, rsp, nb_stack_block):
         memalign = get_memory_alignment()
-        print("Inspecting %d from SP=%s" % (nb_stack_block, format_address(rsp)))
+        print("Inspecting %d stack entries from SP=%s" % (nb_stack_block, format_address(rsp)))
 
         for i in xrange(nb_stack_block):
             cur_addr = long(rsp) + i*memalign
