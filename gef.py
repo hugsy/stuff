@@ -1857,26 +1857,57 @@ class XAddressInfoCommand(GenericCommand):
 
 
 class XorMemoryCommand(GenericCommand):
-    """Patch/display a block of memory by XOR-ing each key with a key."""
+    """XOR a block of memory."""
 
     _cmdline_ = "xor-memory"
-    _syntax_  = "%s <address> <size_to_read> <xor_key> (display|patch)" % _cmdline_
+    _syntax_  = "%s (display|patch) <address> <size_to_read> <xor_key> " % _cmdline_
 
 
     def do_invoke(self, argv):
-        valid_actions = ("display", "patch")
-        if len(argv) not in (3, 4):
+        if len(argv) == 0:
+            err("Missing subcommand (display|patch)")
+            self.usage()
+        return
+
+class XorMemoryDisplayCommand(GenericCommand):
+    """Display a block of memory by XOR-ing each key with a key."""
+
+    _cmdline_ = "xor-memory display"
+    _syntax_  = "%s <address> <size_to_read> <xor_key> " % _cmdline_
+
+
+    def do_invoke(self, argv):
+        if len(argv) != 3:
             self.usage()
             return
 
-        if len(argv) == 4:
-            action = argv[3]
-            if action not in self.valid_actions:
-                err("Invalid action, must be in %s" % self.valid_actions)
-                self.usage()
-                return
-        else:
-            action = "display"
+        address = long(gdb.parse_and_eval(argv[0]))
+        length, key = int(argv[1]), argv[2]
+        block = read_memory(address, length)
+        info("%sing XOR-ing %#x-%#x with '%s'" % (action.capitalize(),
+                                                  address,
+                                                  address + len(block),
+                                                  key))
+
+        print ( titlify("Original block") )
+        print( hexdump( block ) )
+
+        print ( titlify("XOR-ed block") )
+        print( hexdump( XOR(block, key) ) )
+        return
+
+
+class XorMemoryPatchCommand(GenericCommand):
+    """Patch a block of memory by XOR-ing each key with a key."""
+
+    _cmdline_ = "xor-memory patch"
+    _syntax_  = "%s <address> <size_to_read> <xor_key> " % _cmdline_
+
+
+    def do_invoke(self, argv):
+        if len(argv) != 3:
+            self.usage()
+            return
 
         address = long(gdb.parse_and_eval(argv[0]))
         length, key = int(argv[1]), argv[2]
@@ -1887,19 +1918,7 @@ class XorMemoryCommand(GenericCommand):
                                                   key))
 
         xored_block = XOR(block, key)
-
-        if action == "display":
-            print ( titlify("Original block") )
-            print( hexdump( block ) )
-
-            print ( titlify("XOR-ed block") )
-            print( hexdump(xored_block) )
-
-        elif action == "patch":
-            if is_alive():
-                info("todo")
-            else:
-                err("Cannot patch")
+        gdb.selected_inferior().write_memory(address, xored_block, length)
 
         return
 
@@ -2213,7 +2232,7 @@ class GEFCommand(gdb.Command):
                                          gdb.COMMAND_SUPPORT)
 
         self.classes = [XAddressInfoCommand,
-                        XorMemoryCommand,
+                        XorMemoryCommand, XorMemoryDisplayCommand, XorMemoryPatchCommand,
                         FormatStringSearchCommand,
                         TraceRunCommand,
                         PatternCommand,
