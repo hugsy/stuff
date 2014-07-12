@@ -599,7 +599,6 @@ def process_lookup_address(address):
         return None
 
     if is_in_kernel(address):
-        err("Cannot map kernel addresses")
         return None
 
     for sect in get_process_maps():
@@ -762,7 +761,7 @@ def clear_screen():
 
 def is_in_kernel(address):
     memalign = get_memory_alignment()-1
-    return (address >> memalign) & 0x1
+    return (address & 0xFFFFFFFFFFFFFFFF >> memalign) & 0xF
 
 #
 # breakpoints
@@ -916,7 +915,10 @@ class AliasUnsetCommand(GenericCommand):
         if len(argv) != 1:
             err("'%s' requires 1 param" % self._cmdline_)
             return
-        del __aliases__[ argv[1] ]
+        if  argv[1] in  __aliases__:
+            del __aliases__[ argv[1] ]
+        else:
+            err("'%s' not an alias" % argv[1])
         return
 
 class AliasShowCommand(GenericCommand):
@@ -1027,8 +1029,10 @@ class DetailRegistersCommand(GenericCommand):
             if reg.type.code == gdb.TYPE_CODE_FLAGS:
                 line+= "%#x --> %s" % (addr, Color.boldify(str(reg)))
             else:
-                line+= Color.boldify(format_address(addr)) + " -> "
-                line+= " -> ".join(addrs)
+                line+= Color.boldify(format_address(addr))
+                if len(addrs) > 1:
+                    line+= " -> "
+                    line+= " -> ".join(addrs[1:])
             print(line)
 
         return
@@ -1641,18 +1645,30 @@ class DereferenceCommand(GenericCommand):
 
     @staticmethod
     def dereference_from(addr):
-        old_deref = addr
+        old_deref = None
+        deref = addr
         msg = []
         while True:
             try:
-                deref = DereferenceCommand.dereference(old_deref)
-                value = long(deref)
 
-                msg.append( '%s' % format_address(long(deref)) )
-                if is_readable_string(value):
-                    msg.append( '"%s"' % read_string(value) )
+                value = long(deref)
+                section = process_lookup_address(value)
+                if section is None:
                     break
+
+                msg.append( "%s" % format_address(long(deref)) )
+                if section.permission.value & Permission.EXECUTE:
+                    cmd = gdb.execute("x/i %x" % value, to_string=True)
+                    cmd = cmd.replace("=>", '')
+                    cmd = re.sub('\s+',' ', cmd.strip())
+                    msg.append( "%s" % cmd )
+
+                elif section.permission.value & (Permission.READ):
+                    if is_readable_string(value):
+                        msg.append( '"%s"' % read_string(value) )
+
                 old_deref = deref
+                deref = DereferenceCommand.dereference(value)
 
             except OverflowError as e:
                 m = "%d" % int(deref)
@@ -1661,9 +1677,7 @@ class DereferenceCommand(GenericCommand):
                 m = "%d" % int(deref)
                 msg.append( m )
             except Exception as e:
-                err("Unexpected exception: " + e)
-            finally:
-                break
+                err("Unexpected exception: %s" % e)
 
         return msg
 
