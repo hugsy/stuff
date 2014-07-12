@@ -27,9 +27,7 @@
 #
 #
 # ToDo:
-# - add autocomplete w/ gef args
 # - add explicit actions for flags (jumps/overflow/negative/etc)
-# - sort dereference addresses by type (int/ptr/func/etc.)
 #
 # ToDo commands:
 # - patch N bytes in mem (\xcc, \x90, )
@@ -599,6 +597,7 @@ def process_lookup_address(address):
         return None
 
     if is_in_kernel(address):
+        err("Address %#x is in kernel" % address)
         return None
 
     for sect in get_process_maps():
@@ -758,10 +757,16 @@ def clear_screen():
     gdb.execute("shell clear")
     return
 
+def align_address(address):
+    if get_memory_alignment()== 32:
+        return address & 0xFFFFFFFF
+    else:
+        return address & 0xFFFFFFFFFFFFFFFF
 
 def is_in_kernel(address):
+    address = align_address(address)
     memalign = get_memory_alignment()-1
-    return (address & 0xFFFFFFFFFFFFFFFF >> memalign) & 0xF
+    return (address >> memalign) == 0xF
 
 #
 # breakpoints
@@ -1506,8 +1511,8 @@ class ContextCommand(GenericCommand):
             if new_value.type.code == gdb.TYPE_CODE_FLAGS:
                 l += "%s " % (new_value)
             else:
-                new_value = long(new_value) & 0xFFFFFFFFFFFFFFFF
-                old_value = long(old_value) & 0xFFFFFFFFFFFFFFFF
+                new_value = align_address( long(new_value) )
+                old_value = align_address( long(old_value) )
 
                 if new_value == old_value:
                     l += "%s " % (format_address(new_value))
@@ -1577,7 +1582,7 @@ class HexdumpCommand(GenericCommand):
             return
 
         fmt = argv[0]
-        read_from = long(gdb.parse_and_eval(argv[1])) & 0xFFFFFFFFFFFFFFFF
+        read_from = align_address( long(gdb.parse_and_eval(argv[1])) )
 
         read_len = int(argv[2]) if argc >= 2 else 0x20
 
@@ -1651,10 +1656,15 @@ class DereferenceCommand(GenericCommand):
         while True:
             try:
 
-                value = long(deref)
-                section = process_lookup_address(value)
-                if section is None:
+                value = align_address( long(deref) )
+                infos = lookup_address(value)
+                if infos is None:
                     break
+
+                if infos.section is None:
+                    break
+
+                section = infos.section
 
                 msg.append( "%s" % format_address(long(deref)) )
                 if section.permission.value & Permission.EXECUTE:
@@ -1815,7 +1825,7 @@ class XAddressInfoCommand(GenericCommand):
 
         for sym in argv:
             try:
-                addr = long(gdb.parse_and_eval(sym).address) & 0xFFFFFFFFFFFFFFFF
+                addr = align_address( long(gdb.parse_and_eval(sym).address) )
                 print titlify("xinfo: %#x" % addr)
                 self.infos(addr)
 
