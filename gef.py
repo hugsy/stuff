@@ -16,7 +16,7 @@
 # Tested on
 # * x86-32/x86-64 (even though you should totally use `gdb-peda` (https://github.com/longld/peda) instead)
 # * arm-32/arm-64
-# * mipsel
+# * mips
 # * powerpc
 # * sparc
 #
@@ -34,8 +34,6 @@
 # - edit gef config at runtime
 # - finish FormatStringSearchCommand
 #
-# ToDo arch:
-# - sparc64
 #
 #
 import cStringIO
@@ -382,7 +380,7 @@ def all_registers():
         return x86_64_registers()
     elif is_powerpc():
         return powerpc_registers()
-    elif is_sparc():
+    elif is_sparc() or is_sparc64():
         return sparc_registers()
     else:
         raise GefUnsupportedOS("OS type is currently not supported: %s" % get_arch())
@@ -738,7 +736,12 @@ def is_powerpc():
 @memoize
 def is_sparc():
     elf = get_elf_headers()
-    return elf.e_machine==0x02  # http://www.sparc.org/standards/psABI3rd.pdf
+    return elf.e_machine==0x02
+
+@memoize
+def is_sparc():
+    elf = get_elf_headers()
+    return elf.e_machine==0x12
 
 
 def get_memory_alignment():
@@ -1398,6 +1401,7 @@ class ElfInfoCommand(GenericCommand):
         machines = { 0x02: "SPARC",
                      0x03: "x86",
                      0x08: "MIPS",
+                     0x12: "SPARC64",
                      0x14: "PowerPC",
                      0x28: "ARM",
                      0x32: "IA-64",
