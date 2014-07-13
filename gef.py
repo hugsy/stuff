@@ -388,6 +388,10 @@ def all_registers():
         raise GefUnsupportedOS("OS type is currently not supported: %s" % get_arch())
 
 
+def write_memory(address, buffer, length=0x10):
+    return gdb.selected_inferior().write_memory(address, buffer, length)
+
+
 def read_memory(addr, length=0x10):
     return gdb.selected_inferior().read_memory(addr, length)
 
@@ -506,7 +510,6 @@ def get_process_maps():
             sections.append( section )
 
     except IOError:
-        info("/proc/maps not available, hardened or in kernel, trying maintenance")
         sections = get_info_sections()
 
     return sections
@@ -597,11 +600,10 @@ def process_lookup_address(address):
         return None
 
     if is_in_kernel(address):
-        err("Address %#x is in kernel" % address)
         return None
 
     for sect in get_process_maps():
-        if sect.page_start <= address < sect.page_end:
+        if sect.page_start <= address <= sect.page_end:
             return sect
 
     return None
@@ -642,7 +644,10 @@ def XOR(data, key):
 
 # dirty hack from https://github.com/longld/peda
 def define_user_command(cmd, code):
-    commands = "define %s\n%s\nend\n" % (cmd, code)
+    commands = """define %s
+%s
+end
+""" % (cmd, code)
     fd, fname = tempfile.mkstemp()
     os.write(fd, commands)
     os.close(fd)
@@ -1027,17 +1032,16 @@ class DetailRegistersCommand(GenericCommand):
 
         for regname in all_registers():
             reg = gdb.parse_and_eval(regname)
-            addr = long(reg)
-            addrs = DereferenceCommand.dereference_from(addr)
+            addr = align_address( long(reg) )
 
             line = Color.greenify(regname) + ": "
             if reg.type.code == gdb.TYPE_CODE_FLAGS:
                 line+= "%#x --> %s" % (addr, Color.boldify(str(reg)))
             else:
                 line+= Color.boldify(format_address(addr))
+                addrs = DereferenceCommand.dereference_from(addr)
                 if len(addrs) > 1:
-                    line+= " -> "
-                    line+= " -> ".join(addrs[1:])
+                    line+= " -> " + " -> ".join(addrs[1:])
             print(line)
 
         return
@@ -1633,12 +1637,12 @@ class DereferenceCommand(GenericCommand):
             err("Missing argument (register/address)")
             return
 
-        pointer = gdb.parse_and_eval(argv[0])
-        addr = DereferenceCommand.dereference_from(pointer)
+        pointer = align_address( gdb.parse_and_eval(argv[0]) )
+        addrs = DereferenceCommand.dereference_from(pointer)
 
         print ("Following pointers from `%s`:\n%s: %s" % (argv[0],
                                                           format_address(pointer),
-                                                          " -> ".join(addr)))
+                                                          " -> ".join(addrs)))
         return
 
 
@@ -1681,7 +1685,7 @@ class DereferenceCommand(GenericCommand):
                 deref = DereferenceCommand.dereference(value)
 
             except Exception as e:
-                err("Unexpected exception: %s" % e)
+                break
 
         return msg
 
@@ -1819,7 +1823,7 @@ class XAddressInfoCommand(GenericCommand):
 
         for sym in argv:
             try:
-                addr = align_address( long(gdb.parse_and_eval(sym).address) )
+                addr = align_address( long(gdb.parse_and_eval(sym)) )
                 print titlify("xinfo: %#x" % addr)
                 self.infos(addr)
 
@@ -1912,7 +1916,7 @@ class XorMemoryPatchCommand(GenericCommand):
         info("Patching XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
 
         xored_block = XOR(block, key)
-        gdb.selected_inferior().write_memory(address, xored_block, length)
+        write_memory(address, xored_block, length)
 
         return
 
@@ -2103,8 +2107,7 @@ class InspectStackCommand(GenericCommand):
         print("Inspecting %d stack entries from SP=%s" % (nb_stack_block, format_address(rsp)))
 
         for i in xrange(nb_stack_block):
-            cur_addr = long(rsp) + i*memalign
-            addr = gdb.Value(cur_addr)
+            cur_addr = align_address( long(rsp) + i*memalign )
             addrs = DereferenceCommand.dereference_from(cur_addr)
 
             msg = Color.boldify(Color.blueify( format_address(cur_addr) ))
@@ -2367,7 +2370,6 @@ if __name__  == "__main__":
 
     # load GEF
     GEFCommand()
-    # gdb.execute("alias -- ! = gef-alias do")
 
     # post-loading stuff
     define_user_command("hook-stop", "context")
