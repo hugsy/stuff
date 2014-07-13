@@ -1884,10 +1884,7 @@ class XorMemoryDisplayCommand(GenericCommand):
         address = long(gdb.parse_and_eval(argv[0]))
         length, key = int(argv[1]), argv[2]
         block = read_memory(address, length)
-        info("%sing XOR-ing %#x-%#x with '%s'" % (action.capitalize(),
-                                                  address,
-                                                  address + len(block),
-                                                  key))
+        info("Displaying XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
 
         print ( titlify("Original block") )
         print( hexdump( block ) )
@@ -1912,10 +1909,7 @@ class XorMemoryPatchCommand(GenericCommand):
         address = long(gdb.parse_and_eval(argv[0]))
         length, key = int(argv[1]), argv[2]
         block = read_memory(address, length)
-        info("%sing XOR-ing %#x-%#x with '%s'" % (action.capitalize(),
-                                                  address,
-                                                  address + len(block),
-                                                  key))
+        info("Patching XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
 
         xored_block = XOR(block, key)
         gdb.selected_inferior().write_memory(address, xored_block, length)
@@ -1929,6 +1923,12 @@ class TraceRunCommand(GenericCommand):
     _cmdline_ = "trace-run"
     _syntax_  = "%s LOCATION [MAX_CALL_DEPTH]" % _cmdline_
 
+
+    def __init__(self):
+        super(TraceRunCommand, self).__init__(self._cmdline_, complete=gdb.COMPLETE_LOCATION)
+        return
+
+
     def do_invoke(self, argv):
         if len(argv) > 2:
             self.usage()
@@ -1938,11 +1938,13 @@ class TraceRunCommand(GenericCommand):
             warn("Debugging session is not active")
             return
 
+        depth = int(argv[1]) if len(argv)==2 and argv[1].isdigit() else 1
+
         try:
             loc_start = long(gdb.parse_and_eval("$pc"))
-            loc_end = long(argv[0], 16)
+            loc_end = long(gdb.parse_and_eval(argv[0]).address)
 
-        except gdb.error, ve:
+        except gdb.error as e:
             err("Invalid location: %s" % e)
             return
 
@@ -1967,7 +1969,7 @@ class TraceRunCommand(GenericCommand):
         info("Formatting output")
         gdb.execute( "shell sed -i -e '/^[^0x]/d' -e '/^$/d'  %s" % logfile)
         ok("Done, logfile stored as '%s'" % logfile)
-        info("Hint: use `ida_color_gdb_trace.py` script to visualize path")
+        info("Hint: import logfile with `ida_color_gdb_trace.py` script in IDA to visualize path")
         return
 
 
@@ -2231,7 +2233,8 @@ class GEFCommand(gdb.Command):
         super(GEFCommand, self).__init__(GEFCommand._cmdline_,
                                          gdb.COMMAND_SUPPORT)
 
-        self.classes = [XAddressInfoCommand,
+        self.classes = [ResetCacheCommand,
+                        XAddressInfoCommand,
                         XorMemoryCommand, XorMemoryDisplayCommand, XorMemoryPatchCommand,
                         FormatStringSearchCommand,
                         TraceRunCommand,
@@ -2239,7 +2242,6 @@ class GEFCommand(gdb.Command):
                         ChecksecCommand,
                         VMMapCommand,
                         XFilesCommand,
-                        ResetCacheCommand,
                         ASLRCommand,
                         DereferenceCommand,
                         HexdumpCommand,
@@ -2256,7 +2258,6 @@ class GEFCommand(gdb.Command):
                         ShellcodeCommand,
                         DetailRegistersCommand,
                         SolveKernelSymbolCommand,
-
                         AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
 
                         # add new commands here
