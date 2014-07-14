@@ -1035,12 +1035,17 @@ class DetailRegistersCommand(GenericCommand):
 
         for regname in all_registers():
             reg = gdb.parse_and_eval(regname)
-            addr = align_address( long(reg) )
-
             line = Color.greenify(regname) + ": "
-            if reg.type.code == gdb.TYPE_CODE_FLAGS:
+
+            if str(reg.type) == 'builtin_type_sparc_psr':  # ugly but more explicit
+                line+= "%s" % reg
+
+            elif reg.type.code == gdb.TYPE_CODE_FLAGS:
+                addr = align_address( long(reg) )
                 line+= "%#x --> %s" % (addr, Color.boldify(str(reg)))
+
             else:
+                addr = align_address( long(reg) )
                 line+= Color.boldify(format_address(addr))
                 addrs = DereferenceCommand.dereference_from(addr)
                 if len(addrs) > 1:
@@ -1051,14 +1056,11 @@ class DetailRegistersCommand(GenericCommand):
 
 
 class ShellcodeCommand(GenericCommand):
-    """ ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API to download shellcodes """
+    """ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API to download shellcodes"""
 
     _cmdline_ = "shellcode"
-    _syntax_  = "%s (help|search|get)" % _cmdline_
+    _syntax_  = "%s (search|get)" % _cmdline_
 
-    api_base = "http://shell-storm.org"
-    search_url = api_base + "/api/?s="
-    get_url = api_base + "/shellcode/files/shellcode-%d.php"
 
     def pre_load(self):
         try:
@@ -1069,34 +1071,31 @@ class ShellcodeCommand(GenericCommand):
 
 
     def do_invoke(self, argv):
-        argc = len(argv)
-        if argc == 0 or argv[0] not in ("help", "search", "get"):
+        self.usage()
+        return
+
+
+class ShellcodeSearchCommand(GenericCommand):
+    """Search patthern in shellcodes database."""
+
+    _cmdline_ = "shellcode search"
+    _syntax_  = "%s <pattern1> <pattern2>" % _cmdline_
+
+    api_base = "http://shell-storm.org"
+    search_url = api_base + "/api/?s="
+
+
+    def do_invoke(self, argv):
+        if len(argv) == 0:
+            err("Missing pattern to search")
             self.usage()
-            return
-
-        if argv[0] == "help":
-            info("Commands")
-            print("%s search <pattern1> <pattern2> [...]: search shellcodes matching patterns" % self._cmdline_)
-            print("%s get ID: use id provided by `search' subcommand to download shellcode" % self._cmdline_)
-            return
-
-        if argv[0] == "search":
-            if argc == 1:
-                err("Missing search pattern")
-                return
-            self.search_shellcode(argv[1:])
-            return
-
-        if argc == 1 or not argv[1].isdigit():
-            err("Incorrect ID")
-            return
-
-        self.get_shellcode(int(argv[1]))
+        else:
+            self.search_shellcode(argv)
         return
 
 
     def search_shellcode(self, search_options):
-        import requests
+        requests = sys.modules['requests']
 
         # API : http://shell-storm.org/shellcode/
         args = "*".join(search_options)
@@ -1111,20 +1110,51 @@ class ShellcodeCommand(GenericCommand):
 
         info("Showing matching shellcodes")
         for ref in refs:
-            auth, arch, cmd, sid, link = ref
-            print("\t".join([sid, arch, cmd]))
+            try:
+                auth, arch, cmd, sid, link = ref
+                print("\t".join([sid, arch, cmd]))
+            except ValueError:
+                continue
+
         info("Use `%s get <id>` to fetch shellcode" % self._cmdline_)
         return
 
 
+class ShellcodeGetCommand(GenericCommand):
+    """Download shellcode from shellcodes database"""
+
+    _cmdline_ = "shellcode get"
+    _syntax_  = "%s <shellcode_id>" % _cmdline_
+
+    api_base = "http://shell-storm.org"
+    get_url = api_base + "/shellcode/files/shellcode-%d.php"
+
+
+    def do_invoke(self, argv):
+        if len(argv) != 1:
+            err("Missing pattern to search")
+            self.usage()
+            return
+
+        if not argv[0].isdigit():
+            err("ID is not a digit")
+            self.usage()
+            return
+
+        self.get_shellcode(int(argv[0]))
+        return
+
+
     def get_shellcode(self, sid):
-        import requests
+        requests = sys.modules['requests']
+
         http = requests.get(self.get_url % sid)
         if http.status_code != 200:
             err("Could not query search page: got %d" % http.status_code)
             return
+
         info("Downloading shellcode id=%d" % sid)
-        fd, fname = tempfile.mkstemp(suffix=".txt", prefix="%s-" % self._cmdline_, text=True, dir='/tmp')
+        fd, fname = tempfile.mkstemp(suffix=".txt", prefix="sc-", text=True, dir='/tmp')
         data = http.text.split("\n")[7:-11]
         buf = "\n".join(data)
         unesc_buf = HTMLParser.HTMLParser().unescape( buf )
@@ -1375,6 +1405,7 @@ class ElfInfoCommand(GenericCommand):
     _syntax_  = "%s" % _cmdline_
 
     def do_invoke(self, argv):
+        # http://www.sco.com/developers/gabi/latest/ch4.eheader.html
         classes = { 0x01: "32-bit",
                     0x02: "64-bit",
                     }
@@ -1403,6 +1434,7 @@ class ElfInfoCommand(GenericCommand):
                      0x08: "MIPS",
                      0x12: "SPARC64",
                      0x14: "PowerPC",
+                     0x15: "PowerPC64",
                      0x28: "ARM",
                      0x32: "IA-64",
                      0x3E: "x86-64",
@@ -2262,7 +2294,7 @@ class GEFCommand(gdb.Command):
                         ROPgadgetCommand,
                         InspectStackCommand,
                         CtfExploitTemplaterCommand,
-                        ShellcodeCommand,
+                        ShellcodeCommand, ShellcodeSearchCommand, ShellcodeGetCommand,
                         DetailRegistersCommand,
                         SolveKernelSymbolCommand,
                         AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
