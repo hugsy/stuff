@@ -18,7 +18,7 @@
 # * arm-32/arm-64
 # * mips
 # * powerpc
-# * sparc
+# * sparc/sparc64
 #
 #
 # Tested on gdb 7.x / python 2.6 & 2.7 (Python 3 to come)
@@ -2033,46 +2033,38 @@ class PatternCommand(GenericCommand):
     """Metasploit-like pattern generation/search"""
 
     _cmdline_ = "pattern"
-    _syntax_  = "%s create SIZE\n" % _cmdline_
-    _syntax_ += "%s search SIZE PATTERN" % _cmdline_
+    _syntax_  = "%s" % _cmdline_
 
 
     def do_invoke(self, argv):
-        argc = len(argv)
-
-        if argc < 1:
-            self.usage()
-            return
-
-        if argv[0] == "create":
-            if argc != 2:
-                self.usage()
-
-            else:
-                limit = int(argv[1])
-                info("Generating a pattern of %d bytes" % limit)
-                print ( self.generate(limit) )
-
-            return
-
-        elif argv[0] == "search":
-            if argc != 3:
-                self.usage()
-
-            size, pattern = int(argv[1]), argv[2]
-            info("Searching for '%s'" % pattern)
-            offset = self.search(pattern, size)
-
-            if offset < 0:
-                print ("Not found")
-
-        else:
-            err("Unknown command %s" % argv[0])
-
+        self.usage()
         return
 
 
-    def generate(self, limit):
+class PatternCreateCommand(GenericCommand):
+    """Metasploit-like pattern generation"""
+
+    _cmdline_ = "pattern create"
+    _syntax_  = "%s SIZE" % _cmdline_
+
+
+    def do_invoke(self, argv):
+        if len(argv) != 1:
+            self.usage()
+            return
+
+        if not argv[0].isdigit():
+            err("Invalid size")
+            return
+
+        size = int(argv[0])
+        info("Generating a pattern of %d bytes" % size)
+        print ( PatternCreateCommand.generate(size) )
+        return
+
+
+    @staticmethod
+    def generate(limit):
         pattern = ""
         for mj in range(ord('A'), ord('Z')+1) :             # from A to Z
             for mn in range(ord('a'), ord('z')+1) :         # from a to z
@@ -2086,17 +2078,47 @@ class PatternCommand(GenericCommand):
         return ""
 
 
+class PatternSearchCommand(GenericCommand):
+    """Metasploit-like pattern search"""
+
+    _cmdline_ = "pattern search"
+    _syntax_  = "%s SIZE PATTERN" % _cmdline_
+
+
+    def do_invoke(self, argv):
+        if len(argv) != 2:
+            self.usage()
+            return
+
+        if not argv[0].isdigit():
+            err("Invalid size")
+            return
+
+        size, pattern = int(argv[0]), argv[1]
+        info("Searching in '%s'" % pattern)
+        offset = self.search(pattern, size)
+
+        if offset < 0:
+            print ("Not found")
+
+        return
+
+
     def search(self, pattern, size):
         try:
             addr = int( gdb.parse_and_eval(pattern) )
-            pattern_be = struct.pack(">I", addr)
-            pattern_le = struct.pack("<I", addr)
+            if get_memory_alignment() == 32:
+                pattern_be = struct.pack(">I", addr)
+                pattern_le = struct.pack("<I", addr)
+            else:
+                pattern_be = struct.pack(">Q", addr)
+                pattern_le = struct.pack("<Q", addr)
 
         except gdb.error:
             err("Incorrect pattern")
             return -1
 
-        buffer = self.generate(size)
+        buffer = PatternCreateCommand.generate(size)
         found = False
 
         off = buffer.find(pattern_le)
@@ -2277,7 +2299,7 @@ class GEFCommand(gdb.Command):
                         XorMemoryCommand, XorMemoryDisplayCommand, XorMemoryPatchCommand,
                         FormatStringSearchCommand,
                         TraceRunCommand,
-                        PatternCommand,
+                        PatternCommand, PatternSearchCommand, PatternCreateCommand,
                         ChecksecCommand,
                         VMMapCommand,
                         XFilesCommand,
