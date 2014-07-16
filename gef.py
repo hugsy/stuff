@@ -36,7 +36,7 @@
 #
 #
 #
-import cStringIO
+
 import itertools
 import math
 import struct
@@ -47,9 +47,22 @@ import re
 import tempfile
 import os
 import binascii
-import HTMLParser
 import gdb
 
+if sys.version_info.major == 2:
+    import HTMLParser
+    import cStringIO
+
+elif sys.version_info.major == 3:
+    from html.parser import HTMLParser
+    import io.BytesIO as cStringIO
+
+else:
+    raise Exception("WTF is this Python version??")
+
+
+
+NO_COLOR = False
 ROPGADGET_PATH = os.getenv("HOME") + "/code/ROPgadget"
 
 
@@ -120,16 +133,15 @@ class Color:
     UNDERLINE      = "\x1b[4m"
 
     @staticmethod
-    def redify(msg): return Color.RED + msg + Color.NORMAL
+    def redify(msg): return Color.RED + msg + Color.NORMAL if not NO_COLOR else ""
     @staticmethod
-    def greenify(msg): return Color.GREEN + msg + Color.NORMAL
+    def greenify(msg): return Color.GREEN + msg + Color.NORMAL if not NO_COLOR else ""
     @staticmethod
-    def blueify(msg): return Color.BLUE + msg + Color.NORMAL
+    def blueify(msg): return Color.BLUE + msg + Color.NORMAL if not NO_COLOR else ""
     @staticmethod
-    def yellowify(msg): return Color.YELLOW + msg + Color.NORMAL
+    def yellowify(msg): return Color.YELLOW + msg + Color.NORMAL if not NO_COLOR else ""
     @staticmethod
-    def boldify(msg): return Color.BOLD + msg + Color.NORMAL
-
+    def boldify(msg): return Color.BOLD + msg + Color.NORMAL if not NO_COLOR else ""
 
 
 
@@ -440,7 +452,7 @@ def is_alive():
     try:
         pid = get_frame().pid
         return pid > 0
-    except gdb.error, e:
+    except gdb.error as e:
         return False
 
     return False
@@ -800,9 +812,9 @@ class FormatStringBreakpoint(gdb.Breakpoint):
 
         addr = lookup_address(address)
         if 'w' in addr.permissions:
-            print titlify("Format String Detection")
+            print (titlify("Format String Detection"))
             info(">>> Possible writable format string %#x (%s): %s" % (addr, ref, content))
-            print gdb.execute("backtrace")
+            print (gdb.execute("backtrace"))
             return True
 
         return False
@@ -884,6 +896,39 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+class DumpMemoryCommand(GenericCommand):
+    """Dump chunks of memory into raw file on the filesystem."""
+
+    _cmdline_ = "dump-memory"
+    _syntax_  = "%s LOCATION [FILENAME] [SIZE]" % _cmdline_
+
+
+    def __init__(self):
+         super(DumpMemoryCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         return
+
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+
+        if argc not in (1, 2, 3):
+            err("Invalid arguments number")
+            self.usage()
+            return
+
+        start_addr = align_address( long(gdb.parse_and_eval( argv[0] )) )
+        filename = argv[1] if argc==2 else "./dumpmem-%#x.raw"%start_addr
+        size = int(argv[2]) if argc==3 and argv[2].isdigit() else 0x100
+
+        with open(filename, "wb") as f:
+            mem = read_memory( start_addr, size )
+            f.write( mem )
+
+        info("Dumped %d bytes from %#x in '%s'" % (size, start_addr, filename))
+        return
+
 
 __aliases__ = {}
 
@@ -1023,17 +1068,27 @@ class SolveKernelSymbolCommand(GenericCommand):
 
 
 class DetailRegistersCommand(GenericCommand):
-    """Display full details on registers value."""
+    """Display full details on one, many or all registers value from current architecture."""
 
     _cmdline_ = "reg"
-    _syntax_  = "%s" % _cmdline_
+    _syntax_  = "%s [Register1] [Register2] ... [RegisterN]" % _cmdline_
+
 
     def do_invoke(self, argv):
+        regs = []
+
         if not is_alive():
             warn("No debugging session active")
             return
 
-        for regname in all_registers():
+        if len(argv) > 0:
+            for arg in argv:
+                if arg in all_registers():
+                    regs.append( arg )
+        else:
+            regs = all_registers()
+
+        for regname in regs:
             reg = gdb.parse_and_eval(regname)
             line = Color.greenify(regname) + ": "
 
@@ -1203,7 +1258,7 @@ class ROPgadgetCommand(GenericCommand):
         try:
             import ROPgadget
 
-        except ImportError, ie:
+        except ImportError as ie:
             raise GefMissingDependencyException("Failed to import ROPgadget: %s" % ie)
 
         return
@@ -1623,9 +1678,9 @@ class HexdumpCommand(GenericCommand):
 
         fmt = argv[0]
         read_from = align_address( long(gdb.parse_and_eval(argv[1])) )
+        read_len = int(argv[2]) if argc>=3 and argv[2].isdigit() else 10
 
-        read_len = int(argv[2]) if argc >= 2 else 0x20
-
+        print fmt, read_from, read_len
         self._hexdump ( read_from, read_len, fmt )
 
         # todo add deref
@@ -1635,23 +1690,27 @@ class HexdumpCommand(GenericCommand):
     def _hexdump(self, start_addr, length, arrange_as):
         elf = get_elf_headers()
         if elf.e_endianness == 0x01:
-            end = "<"
+            endianness = "<"
         else:
-            end = ">"
+            endianness = ">"
 
         i = 0
-        mem = read_memory(start_addr, length)
+
         formats = { 'q': ('Q', 8),
                     'd': ('I', 4),
                     'w': ('H', 2),
                     'b': ('B', 1),
                     }
         r, l = formats[arrange_as]
+        fmt_str = "<%#x+%d> %#."+str(l*2)+"x"
+        fmt_pack = endianness + r
 
         while i < length:
-            fmt_str = "<%#x+%d> %#."+str(l*2)+"x"
-            print (fmt_str % (start_addr, i, struct.unpack(end + r, mem[i:i+l])[0]))
-            i += l
+            cur_addr = start_addr + i*l
+            mem = read_memory(cur_addr, i)
+            val = struct.unpack(fmt_pack, mem)[0]
+            print (fmt_str % (start_addr, i, val))
+            i += 1
 
         return
 
@@ -1813,7 +1872,7 @@ class VMMapCommand(GenericCommand):
                 l.append( str(entry.permission) )
             l.append( entry.path )
 
-            print " ".join(l)
+            print (" ".join(l))
         return
 
 
@@ -1860,7 +1919,7 @@ class XAddressInfoCommand(GenericCommand):
         for sym in argv:
             try:
                 addr = align_address( long(gdb.parse_and_eval(sym)) )
-                print titlify("xinfo: %#x" % addr)
+                print (titlify("xinfo: %#x" % addr))
                 self.infos(addr)
 
             except gdb.error as gdb_err:
@@ -1879,19 +1938,19 @@ class XAddressInfoCommand(GenericCommand):
         info = addr.info
 
         if sect:
-            print "Found %s" % format_address(addr.value)
-            print "Page: %s->%s (size=%#x)" % (format_address(sect.page_start),
-                                               format_address(sect.page_end),
-                                               sect.page_end-sect.page_start)
-            print "Permissions: %s" % sect.permission
-            print "Pathname: %s" % sect.path
-            print "Offset (from page): +%#x" % (address-sect.page_start)
-            print "Inode: %s" % sect.inode
+            print ("Found %s" % format_address(addr.value))
+            print ("Page: %s->%s (size=%#x)" % (format_address(sect.page_start),
+                                                format_address(sect.page_end),
+                                                sect.page_end-sect.page_start))
+            print ("Permissions: %s" % sect.permission)
+            print ("Pathname: %s" % sect.path)
+            print ("Offset (from page): +%#x" % (address-sect.page_start))
+            print ("Inode: %s" % sect.inode)
 
         if info:
-            print "Section: %s (%s-%s)" % (info.name,
-                                           format_address(info.zone_start),
-                                           format_address(info.zone_end))
+            print ("Section: %s (%s-%s)" % (info.name,
+                                            format_address(info.zone_start),
+                                            format_address(info.zone_end)))
 
         return
 
@@ -1926,10 +1985,10 @@ class XorMemoryDisplayCommand(GenericCommand):
         block = read_memory(address, length)
         info("Displaying XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
 
-        print ( titlify("Original block") )
+        print( titlify("Original block") )
         print( hexdump( block ) )
 
-        print ( titlify("XOR-ed block") )
+        print( titlify("XOR-ed block") )
         print( hexdump( XOR(block, key) ) )
         return
 
@@ -2320,6 +2379,7 @@ class GEFCommand(gdb.Command):
                         DetailRegistersCommand,
                         SolveKernelSymbolCommand,
                         AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
+                        DumpMemoryCommand,
 
                         # add new commands here
                         ]
@@ -2350,7 +2410,7 @@ class GEFCommand(gdb.Command):
             try:
                 class_name()
                 self.loaded_cmds.append( (cmd, class_name)  )
-            except Exception, e:
+            except Exception as e:
                 err("Failed to load `%s`: %s" % (cmd, e.message))
 
         print("%s, type `%s' to start" % (Color.greenify("gef loaded"),
@@ -2359,7 +2419,7 @@ class GEFCommand(gdb.Command):
 
 
     def help(self):
-        print titlify("GEF - GDB Enhanced Features")
+        print( titlify("GEF - GDB Enhanced Features") )
 
         for (cmd, class_name) in self.loaded_cmds:
             if " " in cmd:
