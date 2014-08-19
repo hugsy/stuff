@@ -1626,12 +1626,7 @@ class ContextCommand(GenericCommand):
 
     def context_stack(self):
         print (Color.boldify( Color.blueify("-"*80 + "[stack]")))
-        try:
-            read_from = gdb.parse_and_eval("$sp")
-            mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
-            print ( hexdump(mem) )
-        except gdb.MemoryError:
-            err("Cannot read memory from $SP (corrupted stack pointer?)")
+        InspectStackCommand.inspect_stack(get_register("$sp"), 10)
         return
 
     def context_code(self):
@@ -2216,16 +2211,17 @@ class InspectStackCommand(GenericCommand):
                 pass
 
         top_stack = get_register("$sp")
-        self.inspect_stack(top_stack, nb_stack_block)
+        print("Inspecting %d stack entries from SP=%s" % (nb_stack_block, format_address(top_stack)))
+        InspectStackCommand.inspect_stack(top_stack, nb_stack_block)
         return
 
 
-    def inspect_stack(self, rsp, nb_stack_block):
+    @staticmethod
+    def inspect_stack(sp, nb_stack_block):
         memalign = get_memory_alignment()
-        print("Inspecting %d stack entries from SP=%s" % (nb_stack_block, format_address(rsp)))
 
         for i in xrange(nb_stack_block):
-            cur_addr = align_address( long(rsp) + i*memalign )
+            cur_addr = align_address( long(sp) + i*memalign )
             addrs = DereferenceCommand.dereference_from(cur_addr)
 
             msg = Color.boldify(Color.blueify( format_address(cur_addr) ))
@@ -2416,6 +2412,9 @@ class GEFCommand(gdb.Command):
 
         print("%s, type `%s' to start" % (Color.greenify("gef loaded"),
                                           Color.redify("gef help")))
+        ver = "%d.%d" % (sys.version_info.major, sys.version_info.minor)
+        print("%s commands loaded, using Python engine %s" % (Color.greenify(str(len(self.loaded_cmds))),
+                                                              Color.redify(ver)))
         return
 
 
