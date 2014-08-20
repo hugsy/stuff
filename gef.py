@@ -665,8 +665,9 @@ def process_lookup_address(address):
         err("Process is not running")
         return None
 
-    if is_in_kernel(address):
-        return None
+    if is_x86_64() or is_x86_32() :
+        if is_in_x86_kernel(address):
+            return None
 
     for sect in get_process_maps():
         if sect.page_start <= address <= sect.page_end:
@@ -840,13 +841,10 @@ def align_address(address):
     else:
         return address & 0xFFFFFFFFFFFFFFFF
 
-def is_in_kernel(address):
-    if is_x86_32() or is_x86_64():
-        address = align_address(address)
-        memalign = get_memory_alignment()-1
-        return (address >> memalign) == 0xF
-
-    raise GefGenericException("Function not defined for this architecture")
+def is_in_x86_kernel(address):
+    address = align_address(address)
+    memalign = get_memory_alignment()-1
+    return (address >> memalign) == 0xF
 
 #
 # breakpoints
