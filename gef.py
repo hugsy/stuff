@@ -37,7 +37,6 @@
 #
 #
 
-import itertools
 import math
 import struct
 import subprocess
@@ -49,16 +48,9 @@ import os
 import binascii
 import gdb
 
-if sys.version_info.major == 2:
-    import HTMLParser
-    import cStringIO
-
-elif sys.version_info.major == 3:
-    from html.parser import HTMLParser
-    import io.BytesIO as cStringIO
-
-else:
-    raise Exception("WTF is this Python version??")
+# Python3 import
+from html.parser import HTMLParser
+from io import StringIO
 
 
 
@@ -240,36 +232,58 @@ def titlify(msg):
     return "{0}[{1} {3} {2}]{0}".format('='*20, Color.RED, Color.NORMAL, msg)
 
 def ok(msg):
-    print (Color.BOLD+Color.GREEN+"[+]"+Color.NORMAL+" "+msg)
+    print((Color.BOLD+Color.GREEN+"[+]"+Color.NORMAL+" "+msg))
     return
 
 def warn(msg):
-    print (Color.BOLD+Color.YELLOW+"[+]"+Color.NORMAL+" "+msg)
+    print((Color.BOLD+Color.YELLOW+"[+]"+Color.NORMAL+" "+msg))
     return
 
 def err(msg):
-    print (Color.BOLD+Color.RED+"[+]"+Color.NORMAL+" "+msg)
+    print((Color.BOLD+Color.RED+"[+]"+Color.NORMAL+" "+msg))
     return
 
 def info(msg):
-    print (Color.BOLD+Color.BLUE+"[+]"+Color.NORMAL+" "+msg)
+    print((Color.BOLD+Color.BLUE+"[+]"+Color.NORMAL+" "+msg))
     return
 
-def hexdump(src, l=0x10, show_line_num=True):
-    f = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
-    n = 0
-    res = ''
+def hexdump(src, l=0x10, sep='.', show_raw=False):
+    res = []
 
-    while src:
-       s, src = src[:l], src[l:]
-       hexa = ' '.join(["%02X" % ord(x) for x in s])
-       s = s.translate(f)
-       if show_line_num:
-           res += "%04X   " % n
-       res += "%-*s   %s\n" % (l*3, hexa, s)
-       n += l
+    for i in range(0, len(src), l):
+        s = src[i:i+l]
+        hexa = ''
+        isMiddle = False
 
-    return res
+        for h in range(0,len(s)):
+            if h == l/2:
+                hexa += ' '
+            h = s[h]
+            if not isinstance(h, int):
+                h = ord(h)
+            h = hex(h).replace('0x','')
+            if len(h) == 1:
+                h = '0'+h
+            hexa += h + ' '
+
+        hexa = hexa.strip(' ')
+        text = ''
+
+        for c in s:
+            if not isinstance(c, int):
+                c = ord(c)
+                if 0x20 <= c < 0x7F:
+                    text += chr(c)
+                else:
+                    text += sep
+
+        if show_raw:
+            res.append(('%-'+str(l*(2+1)+1)+'s') % (hexa))
+        else:
+            res.append(('%08X:  %-'+str(l*(2+1)+1)+'s  |%s|') % (i, hexa, text))
+
+    return '\n'.join(res)
+
 
 def gef_execute(command, as_list = False):
 
@@ -442,7 +456,7 @@ def read_string(address):
     if not is_readable_string(address):
         raise ValueError("Content at address `%#x` is not a string" % address)
 
-    buf = read_memory_until_null(address)
+    buf = read_memory_until_null(address).tobytes()
     replaced_chars = [ ("\n","\\n"), ("\r","\\r"), ("\t","\\t"), ("\"","\\\"")]
     for f,t in replaced_chars:
         buf = buf.replace(f, t)
@@ -470,7 +484,7 @@ def get_register(regname):
     except :
         err("Cannot parse %s" % regname)
 
-    return long(ret)
+    return int(ret)
 
 
 @memoize
@@ -568,7 +582,7 @@ def get_info_sections():
 @memoize
 def get_info_files():
     infos = []
-    stream = cStringIO.StringIO(gdb.execute("info files", to_string=True))
+    stream = StringIO(gdb.execute("info files", to_string=True))
 
     while True:
         line = stream.readline()
@@ -650,15 +664,12 @@ def lookup_address(address):
 
 
 def XOR(data, key):
-    return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in itertools.izip(data, itertools.cycle(key)))
+    return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(data, itertools.cycle(key)))
 
 
 # dirty hack from https://github.com/longld/peda
 def define_user_command(cmd, code):
-    commands = """define %s
-%s
-end
-""" % (cmd, code)
+    commands = bytes( "define {0}\n{1}\nend".format(cmd, code), "UTF-8" )
     fd, fname = tempfile.mkstemp()
     os.write(fd, commands)
     os.close(fd)
@@ -785,9 +796,12 @@ def align_address(address):
         return address & 0xFFFFFFFFFFFFFFFF
 
 def is_in_kernel(address):
-    address = align_address(address)
-    memalign = get_memory_alignment()-1
-    return (address >> memalign) == 0xF
+    if is_x86_32() or is_x86_64():
+        address = align_address(address)
+        memalign = get_memory_alignment()-1
+        return (address >> memalign) == 0xF
+
+    raise GefGenericException("Function not defined for this architecture")
 
 #
 # breakpoints
@@ -808,14 +822,14 @@ class FormatStringBreakpoint(gdb.Breakpoint):
             raise NotImplementedError()
 
         value = gdb.parse_and_eval(ref)
-        address = long(value)
+        address = int(value)
         pid = get_frame().pid
 
         addr = lookup_address(address)
         if 'w' in addr.permissions:
-            print (titlify("Format String Detection"))
+            print((titlify("Format String Detection")))
             info(">>> Possible writable format string %#x (%s): %s" % (addr, ref, content))
-            print (gdb.execute("backtrace"))
+            print((gdb.execute("backtrace")))
             return True
 
         return False
@@ -919,7 +933,7 @@ class DumpMemoryCommand(GenericCommand):
             self.usage()
             return
 
-        start_addr = align_address( long(gdb.parse_and_eval( argv[0] )) )
+        start_addr = align_address( int(gdb.parse_and_eval( argv[0] )) )
         filename = argv[1] if argc==2 else "./dumpmem-%#x.raw"%start_addr
         size = int(argv[2]) if argc==3 and argv[2].isdigit() else 0x100
 
@@ -959,7 +973,7 @@ class AliasSetCommand(GenericCommand):
         alias_name = argv[0]
         alias_cmds  = " ".join(argv[1:]).split(";")
 
-        if alias_name in __aliases__.keys():
+        if alias_name in list( __aliases__.keys() ):
             warn("Replacing alias '%s'" % alias_name)
         __aliases__[ alias_name ] = alias_cmds
         ok("'%s': '%s'" % (alias_name, "; ".join(alias_cmds)))
@@ -986,8 +1000,8 @@ class AliasShowCommand(GenericCommand):
     _syntax_  = "%s" % _cmdline_
 
     def do_invoke(self, argv):
-        for alias_name in __aliases__.keys():
-            print("'%s'\t'%s'" % (alias_name, ";".join(__aliases__[alias_name])))
+        for alias_name in list( __aliases__.keys() ):
+            print(("'%s'\t'%s'" % (alias_name, ";".join(__aliases__[alias_name]))))
         return
 
 class AliasDoCommand(GenericCommand):
@@ -1002,7 +1016,7 @@ class AliasDoCommand(GenericCommand):
             return
 
         alias_name = argv[0]
-        if alias_name not in __aliases__.keys():
+        if alias_name not in list( __aliases__.keys() ):
             err("No alias '%s'" % alias_name)
             return
 
@@ -1050,7 +1064,7 @@ class SolveKernelSymbolCommand(GenericCommand):
         found = False
         sym = argv[0]
         with open("/proc/kallsyms", "r") as f:
-            for line in f.xreadlines():
+            for line in f:
                 try:
                     symaddr, symtype, symname = line.strip().split(" ", 3)
                     symaddr = int(symaddr, 16)
@@ -1097,11 +1111,10 @@ class DetailRegistersCommand(GenericCommand):
                 line+= "%s" % reg
 
             elif reg.type.code == gdb.TYPE_CODE_FLAGS:
-                addr = align_address( long(reg) )
-                line+= "%#x --> %s" % (addr, Color.boldify(str(reg)))
+                line+= "%s" % (Color.boldify(str(reg)))
 
             else:
-                addr = align_address( long(reg) )
+                addr = align_address( int(reg) )
                 line+= Color.boldify(format_address(addr))
                 addrs = DereferenceCommand.dereference_from(addr)
                 if len(addrs) > 1:
@@ -1168,7 +1181,7 @@ class ShellcodeSearchCommand(GenericCommand):
         for ref in refs:
             try:
                 auth, arch, cmd, sid, link = ref
-                print("\t".join([sid, arch, cmd]))
+                print(("\t".join([sid, arch, cmd])))
             except ValueError:
                 continue
 
@@ -1213,8 +1226,8 @@ class ShellcodeGetCommand(GenericCommand):
         fd, fname = tempfile.mkstemp(suffix=".txt", prefix="sc-", text=True, dir='/tmp')
         data = http.text.split("\n")[7:-11]
         buf = "\n".join(data)
-        unesc_buf = HTMLParser.HTMLParser().unescape( buf )
-        os.write(fd, unesc_buf)
+        unesc_buf = HTMLParser().unescape( buf )
+        os.write(fd, bytes(unesc_buf, "UTF-8"))
         os.close(fd)
         info("Shellcode written as '%s'" % fname)
         return
@@ -1257,7 +1270,8 @@ class ROPgadgetCommand(GenericCommand):
         sys.path.append(ROPGADGET_PATH)
 
         try:
-            import ROPgadget
+            raise Exception("ROPGadget doesn't support Python3 yet")
+            # import ROPgadget
 
         except ImportError as ie:
             raise GefMissingDependencyException("Failed to import ROPgadget: %s" % ie)
@@ -1389,7 +1403,7 @@ class InvokeCommand(GenericCommand):
     _syntax_  = "%s [COMMAND]" % _cmdline_
 
     def do_invoke(self, argv):
-        print( "%s" % gef_execute_external(" ".join(argv)) )
+        print(( "%s" % gef_execute_external(" ".join(argv)) ))
         return
 
 
@@ -1499,21 +1513,21 @@ class ElfInfoCommand(GenericCommand):
 
         elf = get_elf_headers()
 
-        print ("Magic: %s" % hexdump(struct.pack(">I",elf.e_magic), show_line_num=False)),
-        print ("Class: %#x - %s" % (elf.e_class, classes[elf.e_class]))
-        print ("Endianness: %#x - %s" % (elf.e_endianness, endianness[ elf.e_endianness ]))
-        print ("Version: %#x" % elf.e_eiversion)
-        print ("OS ABI: %#x - %s" % (elf.e_osabi, osabi[ elf.e_osabi]))
-        print ("ABI Version: %#x" % elf.e_abiversion)
-        print ("Type: %#x - %s" % (elf.e_type, types[elf.e_type]) )
+        print(("Magic: %s" % hexdump(struct.pack(">I",elf.e_magic), show_raw=True)))
+        print(("Class: %#x - %s" % (elf.e_class, classes[elf.e_class])))
+        print(("Endianness: %#x - %s" % (elf.e_endianness, endianness[ elf.e_endianness ])))
+        print(("Version: %#x" % elf.e_eiversion))
+        print(("OS ABI: %#x - %s" % (elf.e_osabi, osabi[ elf.e_osabi])))
+        print(("ABI Version: %#x" % elf.e_abiversion))
+        print(("Type: %#x - %s" % (elf.e_type, types[elf.e_type]) ))
 
-        print ("Machine: %#x" % elf.e_machine),
+        print(("Machine: %#x" % elf.e_machine), end=' ')
         if elf.e_machine in machines:
-            print (" - %s" % machines[elf.e_machine] ),
+            print((" - %s" % machines[elf.e_machine] ), end=' ')
         print ("")
 
-        print ("ELF Version: %#x" % elf.e_version)
-        print ("Entry point: %s" % format_address(elf.e_entry))
+        print(("ELF Version: %#x" % elf.e_version))
+        print(("Entry point: %s" % format_address(elf.e_entry)))
 
         # todo finish
         return
@@ -1595,7 +1609,7 @@ class ContextCommand(GenericCommand):
         return
 
     def context_regs(self):
-        print (Color.boldify( Color.blueify("-"*80 + "[regs]") ))
+        print((Color.boldify( Color.blueify("-"*80 + "[regs]") )))
         i = 0
         l = ""
 
@@ -1607,8 +1621,8 @@ class ContextCommand(GenericCommand):
             if new_value.type.code == gdb.TYPE_CODE_FLAGS:
                 l += "%s " % (new_value)
             else:
-                new_value = align_address( long(new_value) )
-                old_value = align_address( long(old_value) )
+                new_value = align_address( int(new_value) )
+                old_value = align_address( int(old_value) )
 
                 if new_value == old_value:
                     l += "%s " % (format_address(new_value))
@@ -1625,12 +1639,22 @@ class ContextCommand(GenericCommand):
         return
 
     def context_stack(self):
+<<<<<<< HEAD
         print (Color.boldify( Color.blueify("-"*80 + "[stack]")))
         InspectStackCommand.inspect_stack(get_register("$sp"), 10)
+=======
+        print(( Color.boldify( Color.blueify("-"*80 + "[stack]")) ))
+        try:
+            read_from = gdb.parse_and_eval("$sp")
+            mem = read_memory(read_from, 0x10 * self.nb_lines_stack)
+            print(( hexdump(mem) ))
+        except gdb.MemoryError:
+            err("Cannot read memory from $SP (corrupted stack pointer?)")
+>>>>>>> py3
         return
 
     def context_code(self):
-        print (Color.boldify( Color.blueify("-"*80 + "[code]")))
+        print(( Color.boldify( Color.blueify("-"*80 + "[code]")) ))
         try:
             gdb.execute("x/%di $pc" % self.nb_lines_code)
         except gdb.MemoryError:
@@ -1638,7 +1662,7 @@ class ContextCommand(GenericCommand):
         return
 
     def context_trace(self):
-        print (Color.boldify( Color.blueify("-"*80 + "[trace]")))
+        print(( Color.boldify( Color.blueify("-"*80 + "[trace]")) ))
         try:
             gdb.execute("backtrace %d" % self.nb_lines_backtrace)
         except gdb.MemoryError:
@@ -1673,10 +1697,9 @@ class HexdumpCommand(GenericCommand):
             return
 
         fmt = argv[0]
-        read_from = align_address( long(gdb.parse_and_eval(argv[1])) )
+        read_from = align_address( int(gdb.parse_and_eval(argv[1])) )
         read_len = int(argv[2]) if argc>=3 and argv[2].isdigit() else 10
 
-        print fmt, read_from, read_len
         self._hexdump ( read_from, read_len, fmt )
 
         # todo add deref
@@ -1685,11 +1708,7 @@ class HexdumpCommand(GenericCommand):
 
     def _hexdump(self, start_addr, length, arrange_as):
         elf = get_elf_headers()
-        if elf.e_endianness == 0x01:
-            endianness = "<"
-        else:
-            endianness = ">"
-
+        endianness = "<" if elf.e_endianness == 0x01 else ">"
         i = 0
 
         formats = { 'q': ('Q', 8),
@@ -1698,14 +1717,14 @@ class HexdumpCommand(GenericCommand):
                     'b': ('B', 1),
                     }
         r, l = formats[arrange_as]
-        fmt_str = "<%#x+%d> %#."+str(l*2)+"x"
+        fmt_str = "<%#x+%x> %#."+str(l*2)+"x"
         fmt_pack = endianness + r
 
         while i < length:
             cur_addr = start_addr + i*l
-            mem = read_memory(cur_addr, i)
-            val = struct.unpack(fmt_pack, mem)[0]
-            print (fmt_str % (start_addr, i, val))
+            mem = read_memory(cur_addr, l)
+            val = struct.unpack(fmt_pack, mem.tobytes())[0]
+            print (fmt_str % (start_addr, i*l, val))
             i += 1
 
         return
@@ -1728,12 +1747,12 @@ class DereferenceCommand(GenericCommand):
             err("Missing argument (register/address)")
             return
 
-        pointer = align_address( gdb.parse_and_eval(argv[0]) )
+        pointer = align_address( int(gdb.parse_and_eval(argv[0])) )
         addrs = DereferenceCommand.dereference_from(pointer)
 
-        print ("Following pointers from `%s`:\n%s: %s" % (argv[0],
+        print(("Following pointers from `%s`:\n%s: %s" % (argv[0],
                                                           format_address(pointer),
-                                                          " -> ".join(addrs)))
+                                                          " -> ".join(addrs))))
         return
 
 
@@ -1751,15 +1770,15 @@ class DereferenceCommand(GenericCommand):
         while True:
             try:
 
-                value = align_address( long(deref) )
+                value = align_address( int(deref) )
                 infos = lookup_address(value)
                 if infos is None or infos.section is None:
-                    msg.append( "%#x" % (long(deref)) )
+                    msg.append( "%#x" % (int(deref)) )
                     break
 
                 section = infos.section
 
-                msg.append( "%s" % format_address(long(deref)) )
+                msg.append( "%s" % format_address(int(deref)) )
                 if section.permission.value & Permission.EXECUTE:
                     cmd = gdb.execute("x/i %x" % value, to_string=True)
                     cmd = cmd.replace("=>", '')
@@ -1804,7 +1823,7 @@ class ASLRCommand(GenericCommand):
             else:
                 msg+= Color.green( "enabled" )
 
-            print ("%s" % msg)
+            print(("%s" % msg))
 
             return
 
@@ -1853,9 +1872,9 @@ class VMMapCommand(GenericCommand):
             return
 
         if is_elf64():
-            print ("%18s %18s %18s %4s %s" % ("Start", "End", "Offset", "Perm", "Path"))
+            print(("%18s %18s %18s %4s %s" % ("Start", "End", "Offset", "Perm", "Path")))
         else:
-            print ("%10s %10s %10s %4s %s" % ("Start", "End", "Offset", "Perm", "Path"))
+            print(("%10s %10s %10s %4s %s" % ("Start", "End", "Offset", "Perm", "Path")))
         for entry in vmmap:
             l = []
             l.append( format_address( entry.page_start ))
@@ -1868,7 +1887,7 @@ class VMMapCommand(GenericCommand):
                 l.append( str(entry.permission) )
             l.append( entry.path )
 
-            print (" ".join(l))
+            print((" ".join(l)))
         return
 
 
@@ -1884,7 +1903,7 @@ class XFilesCommand(GenericCommand):
             warn("Result may be incomplete (shared libs, etc.)")
             return
 
-        print("%10s %10s %20s %s" % ("Start", "End", "Name", "File"))
+        print(("%10s %10s %20s %s" % ("Start", "End", "Name", "File")))
         for xfile in get_info_files():
             l= ""
             l+= "%s %s" % (format_address(xfile.zone_start),
@@ -1914,8 +1933,8 @@ class XAddressInfoCommand(GenericCommand):
 
         for sym in argv:
             try:
-                addr = align_address( long(gdb.parse_and_eval(sym)) )
-                print (titlify("xinfo: %#x" % addr))
+                addr = align_address( int(gdb.parse_and_eval(sym)) )
+                print(( titlify("xinfo: %#x" % addr )))
                 self.infos(addr)
 
             except gdb.error as gdb_err:
@@ -1934,19 +1953,19 @@ class XAddressInfoCommand(GenericCommand):
         info = addr.info
 
         if sect:
-            print ("Found %s" % format_address(addr.value))
-            print ("Page: %s->%s (size=%#x)" % (format_address(sect.page_start),
+            print(("Found %s" % format_address(addr.value)))
+            print(("Page: %s->%s (size=%#x)" % (format_address(sect.page_start),
                                                 format_address(sect.page_end),
-                                                sect.page_end-sect.page_start))
-            print ("Permissions: %s" % sect.permission)
-            print ("Pathname: %s" % sect.path)
-            print ("Offset (from page): +%#x" % (address-sect.page_start))
-            print ("Inode: %s" % sect.inode)
+                                                sect.page_end-sect.page_start)))
+            print(("Permissions: %s" % sect.permission))
+            print(("Pathname: %s" % sect.path))
+            print(("Offset (from page): +%#x" % (address-sect.page_start)))
+            print(("Inode: %s" % sect.inode))
 
         if info:
-            print ("Section: %s (%s-%s)" % (info.name,
+            print(("Section: %s (%s-%s)" % (info.name,
                                             format_address(info.zone_start),
-                                            format_address(info.zone_end)))
+                                            format_address(info.zone_end))))
 
         return
 
@@ -1976,16 +1995,16 @@ class XorMemoryDisplayCommand(GenericCommand):
             self.usage()
             return
 
-        address = long(gdb.parse_and_eval(argv[0]))
+        address = int(gdb.parse_and_eval(argv[0]))
         length, key = int(argv[1]), argv[2]
         block = read_memory(address, length)
         info("Displaying XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
 
-        print( titlify("Original block") )
-        print( hexdump( block ) )
+        print(( titlify("Original block") ))
+        print(( hexdump( block ) ))
 
-        print( titlify("XOR-ed block") )
-        print( hexdump( XOR(block, key) ) )
+        print(( titlify("XOR-ed block") ))
+        print(( hexdump( XOR(block, key) )))
         return
 
 
@@ -2001,7 +2020,7 @@ class XorMemoryPatchCommand(GenericCommand):
             self.usage()
             return
 
-        address = long(gdb.parse_and_eval(argv[0]))
+        address = int(gdb.parse_and_eval(argv[0]))
         length, key = int(argv[1]), argv[2]
         block = read_memory(address, length)
         info("Patching XOR-ing %#x-%#x with '%s'" % (address, address+len(block), key))
@@ -2036,8 +2055,8 @@ class TraceRunCommand(GenericCommand):
         depth = int(argv[1]) if len(argv)==2 and argv[1].isdigit() else 1
 
         try:
-            loc_start = long(gdb.parse_and_eval("$pc"))
-            loc_end = long(gdb.parse_and_eval(argv[0]).address)
+            loc_start = int(gdb.parse_and_eval("$pc"))
+            loc_end = int(gdb.parse_and_eval(argv[0]).address)
 
         except gdb.error as e:
             err("Invalid location: %s" % e)
@@ -2114,7 +2133,7 @@ class PatternCreateCommand(GenericCommand):
 
         size = int(argv[0])
         info("Generating a pattern of %d bytes" % size)
-        print ( PatternCreateCommand.generate(size) )
+        print(( PatternCreateCommand.generate(size) ))
         return
 
 
@@ -2154,7 +2173,7 @@ class PatternSearchCommand(GenericCommand):
         offset = self.search(pattern, size)
 
         if offset < 0:
-            print ("Not found")
+            print(("Not found"))
 
         return
 
@@ -2219,15 +2238,22 @@ class InspectStackCommand(GenericCommand):
     @staticmethod
     def inspect_stack(sp, nb_stack_block):
         memalign = get_memory_alignment()
+<<<<<<< HEAD
 
         for i in xrange(nb_stack_block):
             cur_addr = align_address( long(sp) + i*memalign )
+=======
+        print(("Inspecting %d stack entries from SP=%s" % (nb_stack_block, format_address(rsp))))
+
+        for i in xrange(nb_stack_block):
+            cur_addr = align_address( int(rsp) + i*memalign )
+>>>>>>> py3
             addrs = DereferenceCommand.dereference_from(cur_addr)
 
             msg = Color.boldify(Color.blueify( format_address(cur_addr) ))
             msg += ": "
             msg += " -> ".join(addrs)
-            print(msg)
+            print((msg))
 
         return
 
@@ -2260,7 +2286,7 @@ class ChecksecCommand(GenericCommand):
             return
 
         if not os.access("/usr/bin/readelf", os.X_OK):
-            print("Could not access readelf")
+            err("Could not access readelf")
 
         info("%s for '%s'" % (self._cmdline_, filename))
         self.checksec(filename)
@@ -2292,7 +2318,7 @@ class ChecksecCommand(GenericCommand):
             else:
                 buf+= Color.greenify("Yes")
 
-        print ("%s" % buf)
+        print(("%s" % buf))
         return
 
 
@@ -2408,18 +2434,23 @@ class GEFCommand(gdb.Command):
                 class_name()
                 self.loaded_cmds.append( (cmd, class_name)  )
             except Exception as e:
-                err("Failed to load `%s`: %s" % (cmd, e.message))
+                err("Failed to load `%s`: %s" % (cmd, e))
 
+<<<<<<< HEAD
         print("%s, type `%s' to start" % (Color.greenify("gef loaded"),
                                           Color.redify("gef help")))
         ver = "%d.%d" % (sys.version_info.major, sys.version_info.minor)
         print("%s commands loaded, using Python engine %s" % (Color.greenify(str(len(self.loaded_cmds))),
                                                               Color.redify(ver)))
+=======
+        print(("%s, type `%s' to start" % (Color.greenify("gef loaded"),
+                                          Color.redify("gef help"))))
+>>>>>>> py3
         return
 
 
     def help(self):
-        print( titlify("GEF - GDB Enhanced Features") )
+        print((titlify("GEF - GDB Enhanced Features") ))
 
         for (cmd, class_name) in self.loaded_cmds:
             if " " in cmd:
@@ -2432,7 +2463,7 @@ class GEFCommand(gdb.Command):
             except AttributeError:
                 msg = "%-20s -- <Unspecified>" % (cmd, )
 
-            print ("%s" % msg)
+            print(("%s" % msg))
 
         return
 
@@ -2497,15 +2528,15 @@ if __name__  == "__main__":
 ##
 ##  CTF exploit templates
 ##
-CTF_EXPLOIT_TEMPLATE = """#!/usr/bin/env python2
-import socket, struct, sys, telnetlib, itertools, binascii
+CTF_EXPLOIT_TEMPLATE = """#!/usr/bin/env python3
+import socket, struct, sys, telnetlib, binascii
 
 HOST = "%s"
 PORT = %s
 
 DEBUG = True
 
-def xor(data, key): return binascii.hexlify(''.join(chr(ord(c1) ^ ord(c2)) for c1, c2 in itertools.zip(binascii.unhexlify(s1), cycle(binascii.unhexlify(s2)))))
+def xor(data, key): return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(data, itertools.cycle(key)))
 def hexdump(src, length=0x10):
     f=''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
     n=0
@@ -2519,14 +2550,14 @@ def hexdump(src, length=0x10):
     return result
 def _s(i): return struct.pack("<I", i)
 def _u(i): return struct.unpack("<I", i)[0]
-def err(msg): print("[!] %%s" %% msg)
-def ok(msg): print("[+] %%s" %% msg)
+def err(msg): print(("[!] %%s" %% msg))
+def ok(msg): print(("[+] %%s" %% msg))
 def debug(msg, in_hexa=False):
     if DEBUG:
         if not in_hexa:
-            print("[*] %%s" %% msg)
+            print(("[*] %%s" %% msg))
         else:
-            print("[*] Hexdump:\\n%%s" %% hexdump(msg))
+            print(("[*] Hexdump:\\n%%s" %% hexdump(msg)))
 
 
 def grab_banner(s):
