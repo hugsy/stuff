@@ -30,8 +30,6 @@
 # - add explicit actions for flags (jumps/overflow/negative/etc)
 #
 # ToDo commands:
-# - patch N bytes in mem (\xcc, \x90, )
-# - edit gef config at runtime
 # - finish FormatStringSearchCommand
 #
 #
@@ -71,9 +69,9 @@ else:
 
 
 
-
+__aliases__ = {}
+__config__ = {}
 NO_COLOR = False
-ROPGADGET_PATH = os.getenv("HOME") + "/code/ROPgadget"
 
 
 class GefGenericException(Exception):
@@ -923,7 +921,6 @@ class GenericCommand(gdb.Command):
         complete_type = kwargs["complete"] if "complete" in kwargs else gdb.COMPLETE_NONE
         super(GenericCommand, self).__init__(self._cmdline_, command_type, complete_type, True)
         self.post_load()
-
         return
 
 
@@ -946,6 +943,18 @@ class GenericCommand(gdb.Command):
         return
 
 
+    def add_setting(self, name, value):
+        key = "%s.%s" % (self.__class__._cmdline_, name)
+        __config__[ key ] = (value, type(value))
+        return
+
+
+    def get_setting(self, name):
+        key = "%s.%s" % (self.__class__._cmdline_, name)
+        return __config__[ key ][0]
+
+
+
 # class TemplateCommand(GenericCommand):
     # """TemplaceCommand: add description here."""
 
@@ -965,6 +974,8 @@ class DumpMemoryCommand(GenericCommand):
 
     def __init__(self):
          super(DumpMemoryCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         self.add_setting("dumpfile_prefix", "./dumpmem-")
+         self.add_setting("dumpfile_suffix", "raw")
          return
 
 
@@ -976,8 +987,11 @@ class DumpMemoryCommand(GenericCommand):
             self.usage()
             return
 
+        prefix = self.get_setting("dumpfile_prefix")
+        suffix = self.get_setting("dumpfile_suffix")
+
         start_addr = align_address( long(gdb.parse_and_eval( argv[0] )) )
-        filename = argv[1] if argc==2 else "./dumpmem-%#x.raw"%start_addr
+        filename = argv[1] if argc==2 else "%s%#x.%s" % (prefix, start_addr, suffix)
         size = long(argv[2]) if argc==3 and argv[2].isdigit() else 0x100
 
         with open(filename, "wb") as f:
@@ -988,7 +1002,6 @@ class DumpMemoryCommand(GenericCommand):
         return
 
 
-__aliases__ = {}
 
 class AliasCommand(GenericCommand):
     """GEF defined aliases"""
@@ -1282,6 +1295,11 @@ class CtfExploitTemplaterCommand(GenericCommand):
     _cmdline_ = "ctf-exploit-templater"
     _syntax_  = "%s HOST PORT [/path/exploit.py]" % _cmdline_
 
+    def __init__(self):
+        super(CtfExploitTemplaterCommand, self).__init__()
+        self.add_setting("exploit_path", "./gef-exploit.py")
+        return
+
     def do_invoke(self, argv):
         argc = len(argv)
 
@@ -1290,7 +1308,7 @@ class CtfExploitTemplaterCommand(GenericCommand):
             return
 
         host, port = argv[0], argv[1]
-        path = argv[2] if argc==3 else "./gef-exploit.py"
+        path = argv[2] if argc==3 else self.get_setting("exploit_path")
 
         with open(path, "w") as f:
             f.write( CTF_EXPLOIT_TEMPLATE % (host, port) )
@@ -1306,16 +1324,23 @@ class ROPgadgetCommand(GenericCommand):
     _syntax_  = "%s  [OPTIONS]" % _cmdline_
 
 
+    def __init__(self):
+        super(ROPgadgetCommand, self).__init__()
+        self.add_setting("ropgadget_path", os.getenv("HOME") + "/code/ROPgadget")
+        return
+
     def pre_load(self):
-        if not os.path.isdir(ROPGADGET_PATH):
+        if sys.version_info.major == 3:
+            raise GefGenericException("ROPGadget doesn't support Python3 yet")
+
+        ropgadget_path = self.get_setting("ropgadget_path")
+        if not os.path.isdir():
             raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
 
-        sys.path.append(ROPGADGET_PATH)
+        sys.path.append(ropgadget_path)
 
         try:
-            raise Exception("ROPGadget doesn't support Python3 yet")
-            # import ROPgadget
-
+            import ROPGadget
         except ImportError as ie:
             raise GefMissingDependencyException("Failed to import ROPgadget: %s" % ie)
 
@@ -1323,7 +1348,7 @@ class ROPgadgetCommand(GenericCommand):
 
 
     def do_invoke(self, argv):
-        import ROPgadget
+        ROPgadget = sys.modules['ROPgadget']
 
         class FakeArgs(object):
             binary = None
@@ -1456,6 +1481,10 @@ class ProcessListingCommand(GenericCommand):
     _cmdline_ = "ps"
     _syntax_  = "%s [PATTERN]" % _cmdline_
 
+    def __init__(self):
+        super(ProcessListingCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+        self.add_setting("ps_command", "/bin/ps auxww")
+        return
 
     def do_invoke(self, argv):
         processes = self.ps()
@@ -1489,7 +1518,7 @@ class ProcessListingCommand(GenericCommand):
 
     def ps(self):
         processes = list()
-        output = gef_execute_external("/bin/ps auxww", True)[1:]
+        output = gef_execute_external(self.get_setting("ps_command"), True)[1:]
 
         for line in output:
             field = re.compile('\s+').split(line)
@@ -1630,10 +1659,15 @@ class ContextCommand(GenericCommand):
     _syntax_  = "%s" % _cmdline_
 
     old_registers = {}
-    nb_registers_per_line = 4
-    nb_lines_stack = 5
-    nb_lines_backtrace = 5
-    nb_lines_code  = 6
+
+    def __init__(self):
+         super(ContextCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         self.add_setting("show_stack_raw", False)
+         self.add_setting("nb_registers_per_line", 4)
+         self.add_setting("nb_lines_stack", 5)
+         self.add_setting("nb_lines_backtrace", 5)
+         self.add_setting("nb_lines_code", 6)
+         return
 
 
     def do_invoke(self, argv):
@@ -1674,19 +1708,20 @@ class ContextCommand(GenericCommand):
 
             i+=1
 
-            if (i > 0) and (i % self.nb_registers_per_line==0) :
+            if (i > 0) and (i % self.get_setting("nb_registers_per_line")==0) :
                 print(l)
                 l = ""
 
         print("")
         return
 
-    def context_stack(self, show_raw=False):
+    def context_stack(self):
         print (Color.boldify( Color.blueify("-"*80 + "[stack]")))
 
+        show_raw = self.get_setting("show_stack_raw")
         try:
             if show_raw:
-                mem = read_memory(get_register("$sp"), 0x10 * self.nb_lines_stack)
+                mem = read_memory(get_register("$sp"), 0x10 * self.get_setting("nb_lines_stack"))
                 print (( hexdump(mem) ))
             else:
                 InspectStackCommand.inspect_stack(get_register("$sp"), 10)
@@ -1694,13 +1729,12 @@ class ContextCommand(GenericCommand):
         except gdb.MemoryError:
                 err("Cannot read memory from $SP (corrupted stack pointer?)")
 
-
         return
 
     def context_code(self):
         print(( Color.boldify( Color.blueify("-"*80 + "[code]")) ))
         try:
-            gdb.execute("x/%di $pc" % self.nb_lines_code)
+            gdb.execute("x/%di $pc" % self.get_setting("nb_lines_code"))
         except gdb.MemoryError:
             err("Cannot disassemble from $PC")
         return
@@ -1708,7 +1742,7 @@ class ContextCommand(GenericCommand):
     def context_trace(self):
         print(( Color.boldify( Color.blueify("-"*80 + "[trace]")) ))
         try:
-            gdb.execute("backtrace %d" % self.nb_lines_backtrace)
+            gdb.execute("backtrace %d" % self.get_setting("nb_lines_backtrace"))
         except gdb.MemoryError:
             err("Cannot backtrace (corrupted frames?)")
         return
@@ -2085,6 +2119,8 @@ class TraceRunCommand(GenericCommand):
 
     def __init__(self):
         super(TraceRunCommand, self).__init__(self._cmdline_, complete=gdb.COMPLETE_LOCATION)
+        self.add_setting("max_tracing_recursion", 1)
+        self.add_setting("tracefile_prefix", "./gef-trace-")
         return
 
 
@@ -2113,7 +2149,7 @@ class TraceRunCommand(GenericCommand):
 
     def trace(self, loc_start, loc_end):
         info("Tracing from %#x to  %#x" % (loc_start, loc_end))
-        logfile = "./gdb-trace-%#x-%#x.txt" % (loc_start, loc_end)
+        logfile = "%s-%#x-%#x.txt" % (self.get_setting("tracefile_prefix"), loc_start, loc_end)
 
         gdb.execute( "set logging overwrite" )
         gdb.execute( "set logging file %s" % logfile)
@@ -2126,7 +2162,7 @@ class TraceRunCommand(GenericCommand):
         gdb.execute( "set logging off" )
 
         info("Formatting output")
-        gdb.execute( "shell sed -i -e '/^[^0x]/d' -e '/^$/d'  %s" % logfile)
+        gdb.execute("shell sed -i -e '/^[^0x]/d' -e '/^$/d'  %s" % logfile)
         ok("Done, logfile stored as '%s'" % logfile)
         info("Hint: import logfile with `ida_color_gdb_trace.py` script in IDA to visualize path")
         return
@@ -2188,11 +2224,12 @@ class PatternCreateCommand(GenericCommand):
         for mj in range(ord('A'), ord('Z')+1) :             # from A to Z
             for mn in range(ord('a'), ord('z')+1) :         # from a to z
                 for dg in range(ord('0'), ord('9')+1) :     # from 0 to 9
-                    for c in (chr(mj), chr(mn), chr(dg)) :
-                        if len(pattern) == limit :
-                            return pattern
-                        else:
-                            pattern += "%s" % c
+                    for extra in "~!@#$%&*()-_+={}[]|;:<>?/": # adding extra chars
+                        for c in (chr(mj), chr(mn), chr(dg), extra):
+                            if len(pattern) == limit :
+                                return pattern
+                            else:
+                                pattern += "%s" % c
         # Should never be here, just for clarity
         return ""
 
@@ -2305,6 +2342,7 @@ class ChecksecCommand(GenericCommand):
 
     def __init__(self):
          super(ChecksecCommand, self).__init__(complete=gdb.COMPLETE_FILENAME)
+         self.add_setting("readelf_path", "/usr/bin/readelf")
          return
 
 
@@ -2321,7 +2359,7 @@ class ChecksecCommand(GenericCommand):
             self.usage()
             return
 
-        if not os.access("/usr/bin/readelf", os.X_OK):
+        if not os.access(self.get_setting("readelf_path"), os.X_OK):
             err("Could not access readelf")
 
         info("%s for '%s'" % (self._cmdline_, filename))
@@ -2332,7 +2370,7 @@ class ChecksecCommand(GenericCommand):
     def do_check(self, title, opt, filename, pattern, is_match):
         options = opt.split(" ")
         buf = "%-50s" % (title+":")
-        cmd = ["readelf",]
+        cmd = [self.get_setting("readelf_path"), ]
         cmd+= options
         cmd+= [filename, ]
         lines = subprocess.check_output( cmd ).split("\n")
@@ -2443,61 +2481,112 @@ class GEFCommand(gdb.Command):
                         # add new commands here
                         ]
 
-        self.cmds = [ (x._cmdline_, x) for x in self.classes ]
-        self.loaded_cmds = []
+        self.__cmds = [ (x._cmdline_, x) for x in self.classes ]
+        self.__loaded_cmds = []
+
         self.load()
         return
+
+
+    @property
+    def loaded_command_names(self):
+        return [ x[0] for x in self.__loaded_cmds ]
 
 
     def invoke(self, args, from_tty):
         argv = gdb.string_to_argv(args)
         if len(argv) < 1 :
-            err("Missing command for gef -- `gef help` for help")
+            err("Missing command for gef -- `gef help` for help -- `gef config` for configuring")
             return
 
         cmd = argv[0]
         if cmd == "help":
             self.help()
-        else :
+        elif cmd == "config":
+            self.config(*argv[1:])
+        else:
             err("Invalid command '%s' for gef -- `gef load' for help" % ' '.join(argv))
 
         return
 
 
     def load(self, mod=None):
-        for (cmd, class_name) in self.cmds:
+        for (cmd, class_name) in self.__cmds:
             try:
                 class_name()
-                self.loaded_cmds.append( (cmd, class_name)  )
+                self.__loaded_cmds.append( (cmd, class_name)  )
             except Exception as e:
                 err("Failed to load `%s`: %s" % (cmd, e))
 
-        print(("%s, type `%s' to start" % (Color.greenify("gef loaded"),
-                                          Color.redify("gef help"))))
+        print(("%s, `%s' to start, `%s' to configure" % (Color.greenify("gef loaded"),
+                                                         Color.redify("gef help"),
+                                                         Color.redify("gef config"))))
 
         ver = "%d.%d" % (sys.version_info.major, sys.version_info.minor)
-        print(("%s commands loaded, using Python engine %s" % (Color.greenify(str(len(self.loaded_cmds))),
-                                                              Color.redify(ver))))
+        nb_cmds = sum([1 for x in self.loaded_command_names if " " not in x])
+        nb_sub_cmds = sum([1 for x in self.loaded_command_names if " " in x])
+        print(("%s commands loaded (%s sub-commands), using Python engine %s" % (Color.greenify(str(nb_cmds)),
+                                                                                 Color.greenify(str(nb_sub_cmds)),
+                                                                                 Color.redify(ver))))
         return
 
 
     def help(self):
         print((titlify("GEF - GDB Enhanced Features") ))
 
-        for (cmd, class_name) in self.loaded_cmds:
+        for (cmd, class_name) in self.__loaded_cmds:
             if " " in cmd:
                 # do not print out subcommands in main help
                 continue
-            try:
-                doc = class_name.__doc__ if hasattr(class_name, "__doc__") else ""
-                msg = "%-20s -- %s" % (cmd, Color.greenify( doc ))
 
-            except AttributeError:
-                msg = "%-20s -- <Unspecified>" % (cmd, )
-
+            doc = class_name.__doc__ if hasattr(class_name, "__doc__") else ""
+            msg = "%-25s -- %s" % (cmd, Color.greenify( doc ))
             print(("%s" % msg))
-
         return
+
+
+    def config(self, *args):
+        argc = len(args)
+
+        if not (0 <= argc <= 2):
+            err("Invalid number of arguments")
+            return
+
+        if argc==0 or argc==1:
+            config_items = sorted( __config__ )
+            plugin_name = args[0] if argc==1 and args[0] in self.loaded_command_names else ""
+            print(( titlify("GEF configuration settings %s" % plugin_name) ))
+            for key in config_items:
+                if plugin_name not in key:
+                    continue
+                value, type = __config__.get(key, None)
+                print( ("%-40s  (%s) = %s" % (key, type.__name__, value)) )
+            return
+
+        if "." not in args[0]:
+            err("Invalid command format")
+            return
+
+        plugin_name, setting_name = args[0].split(".", 1)
+
+        if plugin_name not in self.loaded_command_names:
+            err("Unknown plugin '%s'" % plugin_name)
+            return
+
+        _curval, _type = __config__.get( args[0], (None, None) )
+        if _type == None:
+            err("Failed to get '%s' config setting" % (args[0], ))
+            return
+
+        try:
+            _type( args[1] )
+        except:
+            err("%s expects type '%s'" % (args[0], _type.__name__))
+            return
+
+        __config__[ args[0] ] = (args[1], _type)
+        return
+
 
 
 
