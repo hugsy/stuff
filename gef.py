@@ -864,7 +864,7 @@ class FormatStringBreakpoint(gdb.Breakpoint):
 
         value = gdb.parse_and_eval(ref)
         address = long(value)
-        pid = get_frame().pid
+        pid = get_pid()
 
         addr = lookup_address(address)
         if 'w' in addr.permissions:
@@ -1334,7 +1334,7 @@ class ROPgadgetCommand(GenericCommand):
             raise GefGenericException("ROPGadget doesn't support Python3 yet")
 
         ropgadget_path = self.get_setting("ropgadget_path")
-        if not os.path.isdir():
+        if not os.path.isdir(ropgadget_path):
             raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
 
         sys.path.append(ropgadget_path)
