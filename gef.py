@@ -954,6 +954,12 @@ class GenericCommand(gdb.Command):
         return __config__[ key ][0]
 
 
+    def del_setting(self, name):
+        key = "%s.%s" % (self.__class__._cmdline_, name)
+        del ( __config__[ key ] )
+        return
+
+
 
 # class TemplateCommand(GenericCommand):
     # """TemplaceCommand: add description here."""
@@ -1326,22 +1332,26 @@ class ROPgadgetCommand(GenericCommand):
 
     def __init__(self):
         super(ROPgadgetCommand, self).__init__()
-        self.add_setting("ropgadget_path", os.getenv("HOME") + "/code/ROPgadget")
         return
 
     def pre_load(self):
+        self.add_setting("ropgadget_path", os.getenv("HOME") + "/code/ROPgadget")
+
         if sys.version_info.major == 3:
             raise GefGenericException("ROPGadget doesn't support Python3 yet")
 
         ropgadget_path = self.get_setting("ropgadget_path")
+
         if not os.path.isdir(ropgadget_path):
+            self.del_setting( "ropgadget_path" )
             raise GefMissingDependencyException("Failed to import ROPgadget (check path)")
 
-        sys.path.append(ropgadget_path)
-
         try:
-            import ROPGadget
+            sys.path.append( ropgadget_path )
+            import ROPgadget
+
         except ImportError as ie:
+            self.del_setting( "ropgadget_path" )
             raise GefMissingDependencyException("Failed to import ROPgadget: %s" % ie)
 
         return
