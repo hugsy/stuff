@@ -2515,7 +2515,7 @@ class GEFCommand(gdb.Command):
         elif cmd == "config":
             self.config(*argv[1:])
         else:
-            err("Invalid command '%s' for gef -- `gef load' for help" % ' '.join(argv))
+            err("Invalid command '%s' for gef -- type `gef help' for help" % ' '.join(argv))
 
         return
 
