@@ -723,14 +723,14 @@ def define_user_command(cmd, code):
 
 
 @memoize
-def get_elf_headers(filename = None):
+def get_elf_headers(filename=None):
     if filename is None:
         filename = get_filename()
 
-    f = open(filename, "rb")
-
-    if not f:
-        err("Failed to open %s" % filename)
+    try:
+        f = open(filename, "rb")
+    except FileNotFoundError:
+        err("'{0}' not found/readable".format(filename))
         return None
 
     elf = Elf()
@@ -765,15 +765,13 @@ def get_elf_headers(filename = None):
 
 @memoize
 def is_elf64():
-    fname = get_filename()
-    elf = get_elf_headers(fname)
+    elf = get_elf_headers()
     return elf.e_class == 0x02
 
 
 @memoize
 def is_elf32():
-    fname = get_filename()
-    elf = get_elf_headers(fname)
+    elf = get_elf_headers()
     return elf.e_class == 0x01
 
 @memoize
@@ -1593,7 +1591,10 @@ class ElfInfoCommand(GenericCommand):
                      0xB7: "AArch64",
                      }
 
-        elf = get_elf_headers()
+        filename = argv[0] if len(argv) else get_filename()
+        elf = get_elf_headers(filename)
+        if elf is None:
+            return
 
         data = [("Magic", "{0!s}".format( hexdump(struct.pack(">I",elf.e_magic), show_raw=True))),
                 ("Class", "{0:#x} - {1}".format(elf.e_class, classes[elf.e_class])),
@@ -1655,6 +1656,8 @@ class EntryPointBreakCommand(GenericCommand):
 
         # break at entry point - never fail
         elf = get_elf_headers()
+        if elf is None:
+            return
         value = elf.e_entry
         if value:
             info("Breaking at entry-point: %#x" % value)
@@ -1799,6 +1802,8 @@ class HexdumpCommand(GenericCommand):
 
     def _hexdump(self, start_addr, length, arrange_as):
         elf = get_elf_headers()
+        if elf is None:
+            return
         endianness = "<" if elf.e_endianness == 0x01 else ">"
         i = 0
 
