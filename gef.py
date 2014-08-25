@@ -2328,7 +2328,7 @@ class InspectStackCommand(GenericCommand):
 
     @staticmethod
     def inspect_stack(sp, nb_stack_block):
-        memalign = get_memory_alignment()
+        memalign = get_memory_alignment() >> 2
 
         for i in range(nb_stack_block):
             cur_addr = align_address( long(sp) + i*memalign )
