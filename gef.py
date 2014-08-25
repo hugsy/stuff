@@ -1595,21 +1595,26 @@ class ElfInfoCommand(GenericCommand):
 
         elf = get_elf_headers()
 
-        print(("Magic: %s" % hexdump(struct.pack(">I",elf.e_magic), show_raw=True)))
-        print(("Class: %#x - %s" % (elf.e_class, classes[elf.e_class])))
-        print(("Endianness: %#x - %s" % (elf.e_endianness, endianness[ elf.e_endianness ])))
-        print(("Version: %#x" % elf.e_eiversion))
-        print(("OS ABI: %#x - %s" % (elf.e_osabi, osabi[ elf.e_osabi])))
-        print(("ABI Version: %#x" % elf.e_abiversion))
-        print(("Type: %#x - %s" % (elf.e_type, types[elf.e_type]) ))
+        data = [("Magic", "{0!s}".format( hexdump(struct.pack(">I",elf.e_magic), show_raw=True))),
+                ("Class", "{0:#x} - {1}".format(elf.e_class, classes[elf.e_class])),
+                ("Endianness", "{0:#x} - {1}".format(elf.e_endianness, endianness[ elf.e_endianness ])),
+                ("Version", "{:#x}".format(elf.e_eiversion)),
+                ("OS ABI", "{0:#x} - {1}".format(elf.e_osabi, osabi[ elf.e_osabi])),
+                ("ABI Version", "{:#x}".format(elf.e_abiversion)),
+                ("Type", "{0:#x} - {1}".format(elf.e_type, types[elf.e_type]) ),
+                ("Machine", "{0:#x} - {1}".format(elf.e_machine, machines[elf.e_machine])),
+                ("Program Header Table" , "{}".format(format_address(elf.e_phoff))),
+                ("Section Header Table" , "{}".format( format_address(elf.e_shoff) )),
+                ("Header Table" , "{}".format( format_address(elf.e_phoff))),
+                ("ELF Version", "{:#x}".format( elf.e_version)),
+                ("Header size" , "{0} ({0:#x})".format(elf.e_ehsize)),
+                ("Entry point", "{}".format( format_address(elf.e_entry) )),
 
-        print(("Machine: %#x" % elf.e_machine), end=' ')
-        if elf.e_machine in machines:
-            print((" - %s" % machines[elf.e_machine] ), end=' ')
-        print ("")
+                # todo finish
+              ]
 
-        print(("ELF Version: %#x" % elf.e_version))
-        print(("Entry point: %s" % format_address(elf.e_entry)))
+        for title, content in data:
+            print(("{:<30}: {}".format(Color.boldify(title), content)))
 
         # todo finish
         return
