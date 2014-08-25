@@ -1730,7 +1730,7 @@ class ContextCommand(GenericCommand):
 
         show_raw = self.get_setting("show_stack_raw")
         try:
-            if show_raw:
+            if show_raw == True:
                 mem = read_memory(get_register("$sp"), 0x10 * self.get_setting("nb_lines_stack"))
                 print (( hexdump(mem) ))
             else:
@@ -2589,12 +2589,17 @@ class GEFCommand(gdb.Command):
             return
 
         try:
-            _type( args[1] )
+            if _type == bool:
+                _newval = True if args[1]=="True" else False
+            else:
+                _newval = args[1]
+                _type( _newval )
+
         except:
             err("%s expects type '%s'" % (args[0], _type.__name__))
             return
 
-        __config__[ args[0] ] = (args[1], _type)
+        __config__[ args[0] ] = (_newval, _type)
         return
 
 
