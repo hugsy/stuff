@@ -515,13 +515,9 @@ def is_alive():
 def get_register(regname):
     ret = -1
 
-    try:
-        t = gdb.lookup_type("unsigned long")
-        reg = gdb.parse_and_eval(regname)
-        ret = reg.cast(t)
-
-    except :
-        err("Cannot parse %s" % regname)
+    t = gdb.lookup_type("unsigned long")
+    reg = gdb.parse_and_eval(regname)
+    ret = reg.cast(t)
 
     return long(ret)
 
@@ -2310,6 +2306,40 @@ class PatternSearchCommand(GenericCommand):
         return -1 if not found else 0
 
 
+class InspectRegistersCommand(GenericCommand):
+    """Registers inspection command"""
+
+    _cmdline_ = "inspect-regs"
+    _syntax_  = "%s" % _cmdline_
+
+    def do_invoke(self, argv):
+        if not is_alive():
+            warn("No debugging session active")
+            return
+
+        self.inspect_regs()
+        return
+
+
+    @staticmethod
+    def inspect_regs():
+        for regname in all_registers():
+            msg  = Color.redify(Color.boldify( regname )) + "- "
+
+            try:
+                reg = get_register( regname )
+                cur_addr = align_address( reg )
+                addrs = DereferenceCommand.dereference_from(cur_addr)
+                msg += Color.blueify( format_address(cur_addr) )  + ": "
+                msg += " -> ".join(addrs)
+            except:
+                # Some exceptions will be triggered, like when attempting to parse flags register
+                msg += Color.blueify( format_address(reg) )
+
+            print((msg))
+        return
+
+
 
 class InspectStackCommand(GenericCommand):
     """Exploiter-friendly top-down stack inspection command (peda-like)"""
@@ -2490,6 +2520,7 @@ class GEFCommand(gdb.Command):
                         AssembleCommand,
                         FileDescriptorCommand,
                         ROPgadgetCommand,
+                        InspectRegistersCommand,
                         InspectStackCommand,
                         CtfExploitTemplaterCommand,
                         ShellcodeCommand, ShellcodeSearchCommand, ShellcodeGetCommand,
