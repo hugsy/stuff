@@ -63,6 +63,7 @@ elif sys.version_info.major == 3:
 
     # Compat Py2/3 hack
     long = int
+    FileNotFoundError = IOError
 
 else:
     raise Exception("WTF is this Python version??")
@@ -513,12 +514,15 @@ def is_alive():
 
 
 def get_register(regname):
-    ret = -1
-
+    """
+    Get register value. Exception will be raised if expression cannot be parse.
+    This function won't catch on purpose.
+    @param regname : expected register
+    @return register value
+    """
     t = gdb.lookup_type("unsigned long")
     reg = gdb.parse_and_eval(regname)
     ret = reg.cast(t)
-
     return long(ret)
 
 
@@ -725,7 +729,7 @@ def get_elf_headers(filename=None):
 
     try:
         f = open(filename, "rb")
-    except FileNotFoundError:
+    except IOError:
         err("'{0}' not found/readable".format(filename))
         return None
 
@@ -966,10 +970,11 @@ class GenericCommand(gdb.Command):
 
 
 class DumpMemoryCommand(GenericCommand):
-    """Dump chunks of memory into raw file on the filesystem."""
+    """Dump chunks of memory into raw file on the filesystem. Dump file
+    name template can be defined in GEF runtime config"""
 
     _cmdline_ = "dump-memory"
-    _syntax_  = "%s LOCATION [FILENAME] [SIZE]" % _cmdline_
+    _syntax_  = "%s LOCATION [SIZE]" % _cmdline_
 
 
     def __init__(self):
@@ -982,7 +987,7 @@ class DumpMemoryCommand(GenericCommand):
     def do_invoke(self, argv):
         argc = len(argv)
 
-        if argc not in (1, 2, 3):
+        if argc not in (1, 2):
             err("Invalid arguments number")
             self.usage()
             return
@@ -991,8 +996,8 @@ class DumpMemoryCommand(GenericCommand):
         suffix = self.get_setting("dumpfile_suffix")
 
         start_addr = align_address( long(gdb.parse_and_eval( argv[0] )) )
-        filename = argv[1] if argc==2 else "%s%#x.%s" % (prefix, start_addr, suffix)
-        size = long(argv[2]) if argc==3 and argv[2].isdigit() else 0x100
+        filename = "%s%#x.%s" % (prefix, start_addr, suffix)
+        size = long(argv[1]) if argc==2 and argv[1].isdigit() else 0x100
 
         with open(filename, "wb") as f:
             mem = read_memory( start_addr, size )
@@ -1179,7 +1184,8 @@ class DetailRegistersCommand(GenericCommand):
 
 
 class ShellcodeCommand(GenericCommand):
-    """ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API to download shellcodes"""
+    """ShellcodeCommand uses @JonathanSalwan simple-yet-awesome shellcode API to
+    download shellcodes"""
 
     _cmdline_ = "shellcode"
     _syntax_  = "%s (search|get)" % _cmdline_
@@ -1433,27 +1439,34 @@ class FileDescriptorCommand(GenericCommand):
 
 
 class AssembleCommand(GenericCommand):
-    """AssembleCommand: using radare2 to assemble code (requires r2 Python bindings)"""
+    """AssembleCommand: using radare2 to assemble code (requires r2 Python bindings)
+    Architecture can be set in GEF runtime config (default is x86).
+    Use `list' subcommand to list architectures supported"""
 
     _cmdline_ = "assemble"
-    _syntax_  = "%s mode [instruction1;[instruction2;]] " % _cmdline_
+    _syntax_  = "%s (list|instruction1;[instruction2;]...[instructionN;])" % _cmdline_
+
+    def __init__(self, *args, **kwargs):
+        super(AssembleCommand, self).__init__()
+        self.add_setting("arch", "x86")
+        return
+
 
     def pre_load(self):
         try:
             import r2, r2.r_asm
-
         except ImportError:
             raise GefMissingDependencyException("radare2 Python bindings could not be loaded")
 
 
     def do_invoke(self, argv):
-        if len(argv) < 2:
+        if len(argv)==0 or (len(argv)==1 and argv[0]=="list"):
             self.usage()
             err("Modes available:\n%s" % gef_execute_external("rasm2 -L; exit 0"))
             return
 
-        mode = argv[0]
-        instns = " ".join(argv[1:])
+        mode = self.get_setting("arch")
+        instns = " ".join(argv)
         info( "%s" % self.assemble(mode, instns) )
         return
 
