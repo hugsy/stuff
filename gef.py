@@ -1153,15 +1153,13 @@ class DetailRegistersCommand(GenericCommand):
             return
 
         if len(argv) > 0:
-            for arg in argv:
-                if arg in all_registers():
-                    regs.append( arg )
+            regs = [ reg for reg in all_registers() if reg.strip() in argv ]
         else:
             regs = all_registers()
 
         for regname in regs:
             reg = gdb.parse_and_eval(regname)
-            line = Color.greenify(regname) + ": "
+            line = Color.boldify(Color.redify(regname)) + ": "
 
             if str(reg.type) == 'builtin_type_sparc_psr':  # ugly but more explicit
                 line+= "%s" % reg
@@ -1171,7 +1169,7 @@ class DetailRegistersCommand(GenericCommand):
 
             else:
                 addr = align_address( long(reg) )
-                line+= Color.boldify(format_address(addr))
+                line+= Color.boldify(Color.blueify(format_address(addr)))
                 addrs = DereferenceCommand.dereference_from(addr)
                 if len(addrs) > 1:
                     line+= " -> " + " -> ".join(addrs[1:])
@@ -2306,41 +2304,6 @@ class PatternSearchCommand(GenericCommand):
         return -1 if not found else 0
 
 
-class InspectRegistersCommand(GenericCommand):
-    """Registers inspection command"""
-
-    _cmdline_ = "inspect-regs"
-    _syntax_  = "%s" % _cmdline_
-
-    def do_invoke(self, argv):
-        if not is_alive():
-            warn("No debugging session active")
-            return
-
-        self.inspect_regs()
-        return
-
-
-    @staticmethod
-    def inspect_regs():
-        for regname in all_registers():
-            msg  = Color.redify(Color.boldify( regname )) + "- "
-
-            try:
-                reg = get_register( regname )
-                cur_addr = align_address( reg )
-                addrs = DereferenceCommand.dereference_from(cur_addr)
-                msg += Color.blueify( format_address(cur_addr) )  + ": "
-                msg += " -> ".join(addrs)
-            except:
-                # Some exceptions will be triggered, like when attempting to parse flags register
-                msg += Color.blueify( format_address(reg) )
-
-            print((msg))
-        return
-
-
-
 class InspectStackCommand(GenericCommand):
     """Exploiter-friendly top-down stack inspection command (peda-like)"""
 
@@ -2520,7 +2483,6 @@ class GEFCommand(gdb.Command):
                         AssembleCommand,
                         FileDescriptorCommand,
                         ROPgadgetCommand,
-                        InspectRegistersCommand,
                         InspectStackCommand,
                         CtfExploitTemplaterCommand,
                         ShellcodeCommand, ShellcodeSearchCommand, ShellcodeGetCommand,
