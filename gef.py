@@ -474,7 +474,7 @@ def is_readable_string(address):
     Here we will assume that a readable string is
     a consecutive byte array whose
     * last element is 0x00
-    * and values for each byte is [0x20, 0x7F]
+    * and values for each byte is [0x07, 0x7F]
     """
     buffer = read_memory_until_null(address)
     if len(buffer) == 0:
@@ -482,11 +482,11 @@ def is_readable_string(address):
 
     if sys.version_info.major == 2:
         for c in buffer:
-            if not (0x20 <= ord(c) < 0x7f):
+            if not (0x07 <= ord(c) < 0x0e) and not (0x20 <= ord(c) < 0x7f):
                 return False
     else:
         for c in buffer:
-            if not (0x20 <= c < 0x7f):
+            if not (0x07 <= c < 0x0e) and not (0x20 <= c < 0x7f):
                 return False
 
     return True
@@ -2688,7 +2688,8 @@ PORT = %s
 
 DEBUG = True
 
-def xor(data, key): return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(data, itertools.cycle(key)))
+def xor(data, key):
+    return ''.join(chr(ord(x) ^ ord(y)) for (x,y) in zip(data, itertools.cycle(key)))
 def hexdump(src, length=0x10):
     f=''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
     n=0
@@ -2700,8 +2701,12 @@ def hexdump(src, length=0x10):
        result += "%%04X   %%-*s   %%s\\n" %% (n, length*3, hexa, s)
        n+=length
     return result
-def _s(i): return struct.pack("<I", i)
-def _u(i): return struct.unpack("<I", i)[0]
+def i_s(i): return struct.pack("<I", i)
+def i_u(i): return struct.unpack("<I", i)[0]
+def q_s(i): return struct.pack("<Q", i)
+def q_u(i): return struct.unpack("<Q", i)[0]
+def h_s(i): return struct.pack("<H", i)
+def h_u(i): return struct.unpack("<H", i)[0]
 def err(msg): print(("[!] %%s" %% msg))
 def ok(msg): print(("[+] %%s" %% msg))
 def debug(msg, in_hexa=False):
