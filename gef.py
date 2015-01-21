@@ -2680,7 +2680,7 @@ if __name__  == "__main__":
 ##
 ##  CTF exploit templates
 ##
-CTF_EXPLOIT_TEMPLATE = """#!/usr/bin/env python3
+CTF_EXPLOIT_TEMPLATE = """#!/usr/bin/env python2
 import socket, struct, sys, telnetlib, binascii
 
 HOST = "%s"
