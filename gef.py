@@ -240,6 +240,99 @@ class Elf:
     e_shstrndx        = None
 
 
+class GlibcChunk:
+
+    def __init__(self, addr):
+        """Init `addr` as a chunk"""
+        self.addr = addr
+        self.arch = get_memory_alignment()/8
+        self.start_addr = self.addr - 2*self.arch
+        self.size_addr  = self.addr - self.arch
+        return
+
+
+    # if alloc-ed functions
+    def get_chunk_size(self):
+        return read_int_from_memory( self.size_addr ) & (~0x03)
+
+    def get_prev_chunk_size(self):
+        return read_int_from_memory( self.start_addr )
+
+    def get_next_chunk(self):
+        addr = self.addr + self.get_chunk_size() + 2*self.arch
+        return GlibcChunk(addr)
+    # endif alloc-ed functions
+
+
+    # if free-ed functions
+    def get_fwd_ptr(self):
+        return read_int_from_memory( self.addr )
+
+    def get_bkw_ptr(self):
+        return read_int_from_memory( self.addr+self.arch )
+    # endif free-ed functions
+
+
+    def has_P_bit(self):
+        """Check for in PREV_INUSE bit"""
+        return read_int_from_memory( self.size_addr ) & 0x01
+
+
+    def has_M_bit(self):
+        """Check for in IS_MMAPPED bit"""
+        return read_int_from_memory( self.size_addr ) & 0x02
+
+
+    def is_used(self):
+        """
+        Check if the current block is used by:
+        - checking the M bit is true
+        - or checking that next chunk PREV_INUSE flag is true
+        """
+        if self.has_M_bit():
+            return True
+
+        next_chunk = self.get_next_chunk()
+        return next_chunk.has_P_bit()
+
+
+    def str_as_alloced(self):
+        msg = ""
+        msg+= "Chunk size: {0:d} ({0:#x})".format( self.get_chunk_size() ) + "\n"
+        msg+= "Usable size: {0:d} ({0:#x})".format( self.get_chunk_size() - 2*self.arch) + "\n"
+        msg+= "Previous chunk size: {0:d} ({0:#x})".format( self.get_prev_chunk_size() ) + "\n"
+
+        msg+= "PREV_INUSE flag: "
+        msg+= Color.greenify("On") if self.has_P_bit() else Color.redify("Off")
+        msg+= "\n"
+
+        msg+= "IS_MMAPPED flag: "
+        msg+= Color.greenify("On") if self.has_M_bit() else Color.redify("Off")
+        return msg
+
+
+    def str_as_freeed(self):
+        msg = ""
+        msg+= "Chunk size: {0:d} ({0:#x})".format( self.get_chunk_size() ) + "\n"
+        msg+= "Previous chunk size: {0:d} ({0:#x})".format( self.get_prev_chunk_size() ) + "\n"
+
+        msg+= "Forward pointer: {0:#x}".format( self.get_fwd_ptr() ) + "\n"
+        msg+= "Backward pointer: {0:#x}".format( self.get_bkw_ptr() )
+        return msg
+
+
+    def __str__(self):
+        msg = "====================[ %s ]====================\n"
+        if self.is_used():
+            msg%= Color.boldify(Color.redify("Chunk: ") + "%#x" % self.start_addr)
+            msg+= self.str_as_alloced()
+        else:
+            msg%= Color.boldify(Color.greenify("Chunk: ") + "%#x" % self.start_addr)
+            msg+= self.str_as_freeed()
+
+        return msg
+
+
 def titlify(msg):
     return "{0}[{1} {3} {2}]{0}".format('='*20, Color.RED, Color.NORMAL, msg)
 
@@ -444,6 +537,13 @@ def read_memory(addr, length=0x10):
         return gdb.selected_inferior().read_memory(addr, length)
     else:
         return gdb.selected_inferior().read_memory(addr, length).tobytes()
+
+
+def read_int_from_memory(addr):
+    arch = get_memory_alignment()/8
+    mem = read_memory( addr, arch)
+    fmt = endian_str()+"I" if arch==4 else endian_str()+"Q"
+    return struct.unpack( fmt, mem)[0]
 
 
 def read_memory_until_null(address):
@@ -668,7 +768,7 @@ def process_lookup_address(address):
             return None
 
     for sect in get_process_maps():
-        if sect.page_start <= address <= sect.page_end:
+        if sect.page_start <= address < sect.page_end:
             return sect
 
     return None
@@ -842,6 +942,13 @@ def is_in_x86_kernel(address):
     memalign = get_memory_alignment()-1
     return (address >> memalign) == 0xF
 
+@memoize
+def endian_str():
+    elf = get_elf_headers()
+    if elf.e_endianness == 0x01:
+        return "<" # LE
+    return ">" # BE
+
 #
 # breakpoints
 #
@@ -967,6 +1074,34 @@ class GenericCommand(gdb.Command):
 
     # def do_invoke(self, argv):
         # return
+
+
+# http://code.woboq.org/userspace/glibc/malloc/malloc.c.html#malloc_chunk
+class GlibcHeapCommand(GenericCommand):
+    """Get some information about the Glibc heap structure."""
+
+    _cmdline_ = "heap"
+    _syntax_  = "%s LOCATION" % _cmdline_
+
+
+    def __init__(self):
+         super(GlibcHeapCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         return
+
+
+    def do_invoke(self, argv):
+        argc = len(argv)
+
+        if argc < 1:
+            err("Missing chunk address")
+            self.usage()
+            return
+
+        addr = long(gdb.parse_and_eval( argv[0] ))
+        chunk = GlibcChunk(addr)
+        print("%s" % chunk)
+        return
+
 
 
 class DumpMemoryCommand(GenericCommand):
@@ -1853,9 +1988,8 @@ class DereferenceCommand(GenericCommand):
         pointer = align_address( long(gdb.parse_and_eval(argv[0])) )
         addrs = DereferenceCommand.dereference_from(pointer)
 
-        print(("Following pointers from `%s`:\n%s: %s" % (argv[0],
-                                                          format_address(pointer),
-                                                          " -> ".join(addrs))))
+        print(("Following pointers from `%s`:" % argv[0]))
+        print(("%s %s" % (format_address(pointer), Color.boldify(" ------->> ").join(addrs))))
         return
 
 
@@ -2503,6 +2637,7 @@ class GEFCommand(gdb.Command):
                         SolveKernelSymbolCommand,
                         AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
                         DumpMemoryCommand,
+                        GlibcHeapCommand,
 
                         # add new commands here
                         ]
