@@ -255,11 +255,14 @@ class GlibcChunk:
     def get_chunk_size(self):
         return read_int_from_memory( self.size_addr ) & (~0x03)
 
+    def get_usable_size(self):
+        return self.get_chunk_size() - 2*self.arch
+
     def get_prev_chunk_size(self):
         return read_int_from_memory( self.start_addr )
 
     def get_next_chunk(self):
-        addr = self.addr + self.get_chunk_size() + 2*self.arch
+        addr = self.start_addr + self.get_chunk_size() + 2*self.arch
         return GlibcChunk(addr)
     # endif alloc-ed functions
 
@@ -293,13 +296,16 @@ class GlibcChunk:
             return True
 
         next_chunk = self.get_next_chunk()
-        return next_chunk.has_P_bit()
+        if next_chunk.has_P_bit():
+            return True
+
+        return False
 
 
     def str_as_alloced(self):
         msg = ""
         msg+= "Chunk size: {0:d} ({0:#x})".format( self.get_chunk_size() ) + "\n"
-        msg+= "Usable size: {0:d} ({0:#x})".format( self.get_chunk_size() - 2*self.arch) + "\n"
+        msg+= "Usable size: {0:d} ({0:#x})".format( self.get_usable_size() ) + "\n"
         msg+= "Previous chunk size: {0:d} ({0:#x})".format( self.get_prev_chunk_size() ) + "\n"
 
         msg+= "PREV_INUSE flag: "
@@ -323,12 +329,12 @@ class GlibcChunk:
 
     def __str__(self):
         msg = "====================[ %s ]====================\n"
-        if self.is_used():
-            msg%= Color.boldify(Color.redify("Chunk: ") + "%#x" % self.start_addr)
-            msg+= self.str_as_alloced()
-        else:
-            msg%= Color.boldify(Color.greenify("Chunk: ") + "%#x" % self.start_addr)
+        if not self.is_used():
+            msg%= Color.boldify(Color.greenify("Chunk (free): ") + "%#x" % self.start_addr)
             msg+= self.str_as_freeed()
+        else:
+            msg%= Color.boldify(Color.redify("Chunk (used): ") + "%#x" % self.start_addr)
+            msg+= self.str_as_alloced()
 
         return msg
 
@@ -1090,6 +1096,11 @@ class GlibcHeapCommand(GenericCommand):
 
 
     def do_invoke(self, argv):
+
+        if not is_alive():
+            warn("No debugging session active")
+            return
+
         argc = len(argv)
 
         if argc < 1:
@@ -1981,15 +1992,17 @@ class DereferenceCommand(GenericCommand):
             warn("No debugging session active")
             return
 
-        if len(argv) != 1:
+        if len(argv) < 1:
             err("Missing argument (register/address)")
             return
 
-        pointer = align_address( long(gdb.parse_and_eval(argv[0])) )
-        addrs = DereferenceCommand.dereference_from(pointer)
+        for addr in argv:
+            pointer = align_address( long(gdb.parse_and_eval(addr)) )
+            addrs = DereferenceCommand.dereference_from(pointer)
 
-        print(("Following pointers from `%s`:" % argv[0]))
-        print(("%s %s" % (format_address(pointer), Color.boldify(" ------->> ").join(addrs))))
+            print(("Dereferencing pointers from `%s`:" % Color.yellowify(format_address(pointer))))
+            print(("%s" % (Color.boldify(" -------> ").join(addrs), )))
+
         return
 
 
