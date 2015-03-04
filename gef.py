@@ -2046,7 +2046,7 @@ class DereferenceCommand(GenericCommand):
                 deref = DereferenceCommand.dereference(value)
 
             except Exception as e:
-                print(((e)))
+                # print(((e)))
                 break
 
         return msg
