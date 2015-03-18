@@ -2364,7 +2364,7 @@ class PatternCommand(GenericCommand):
     """Metasploit-like pattern generation/search"""
 
     _cmdline_ = "pattern"
-    _syntax_  = "%s" % _cmdline_
+    _syntax_  = "%s (create|search) <args>" % _cmdline_
 
 
     def do_invoke(self, argv):
