@@ -2588,6 +2588,10 @@ class ChecksecCommand(GenericCommand):
         # check for RUNPATH
         self.do_check("RUNPATH", "-d -l", filename, r'runpath', is_match=True)
 
+        # check for RELRO
+        self.do_check("Partial RelRO", "-l", filename, r'GNU_RELRO', is_match=True)
+        self.do_check("Full RelRO", "-d", filename, r'BIND_NOW', is_match=True)
+
         return
 
 
