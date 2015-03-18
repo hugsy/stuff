@@ -2299,7 +2299,7 @@ class TraceRunCommand(GenericCommand):
 
 
     def do_invoke(self, argv):
-        if len(argv) > 2:
+        if len(argv) not in (1, 2):
             self.usage()
             return
 
@@ -2307,12 +2307,14 @@ class TraceRunCommand(GenericCommand):
             warn("Debugging session is not active")
             return
 
-        depth = long(argv[1]) if len(argv)==2 and argv[1].isdigit() else 1
+        if len(argv)==2 and argv[1].isdigit():
+            depth = long(argv[1])
+        else:
+            depth = 1
 
         try:
-            loc_start = long(gdb.parse_and_eval("$pc"))
-            loc_end = long(gdb.parse_and_eval(argv[0]).address)
-
+            loc_start   = long(gdb.parse_and_eval("$pc"))
+            loc_end     = long(gdb.parse_and_eval(argv[0]))
         except gdb.error as e:
             err("Invalid location: %s" % e)
             return
@@ -2322,8 +2324,8 @@ class TraceRunCommand(GenericCommand):
 
 
     def trace(self, loc_start, loc_end):
-        info("Tracing from %#x to  %#x" % (loc_start, loc_end))
-        logfile = "%s-%#x-%#x.txt" % (self.get_setting("tracefile_prefix"), loc_start, loc_end)
+        info("Tracing from %#x to %#x" % (loc_start, loc_end))
+        logfile = "%s%#x-%#x.txt" % (self.get_setting("tracefile_prefix"), loc_start, loc_end)
 
         gdb.execute( "set logging overwrite" )
         gdb.execute( "set logging file %s" % logfile)
