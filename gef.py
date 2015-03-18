@@ -2691,12 +2691,15 @@ class GEFCommand(gdb.Command):
 
 
     def load(self, mod=None):
+        loaded = []
         for (cmd, class_name) in self.__cmds:
             try:
                 class_name()
-                self.__loaded_cmds.append( (cmd, class_name)  )
+                loaded.append( (cmd, class_name)  )
             except Exception as e:
                 err("Failed to load `%s`: %s" % (cmd, e))
+
+        self.__loaded_cmds = sorted(loaded, key=lambda x: x[1]._cmdline_)
 
         print(("%s, `%s' to start, `%s' to configure" % (Color.greenify("gef loaded"),
                                                          Color.redify("gef help"),
@@ -2720,6 +2723,7 @@ class GEFCommand(gdb.Command):
                 continue
 
             doc = class_name.__doc__ if hasattr(class_name, "__doc__") else ""
+            doc = "\n                         ".join(doc.split("\n"))
             msg = "%-25s -- %s" % (cmd, Color.greenify( doc ))
             print(("%s" % msg))
         return
