@@ -11,7 +11,7 @@ from idaapi import *
 __PLUGIN_NAME__ = "GDBColorExecFlow"
 __PLUGIN_DESCRIPTION__ = "Use GDB logfile to colorize execution flow in IDB"
 
-HILIGHT_COLOR = 0xe9967a
+HILIGHT_COLOR = 0x005500
 
 def get_next_eip(fd):
 	while True:
@@ -39,4 +39,3 @@ if logFileName is not None:
 		for instr_addr in get_next_eip(fd):
 			if instr_addr < 0x100000000:
 				SetColor( instr_addr, CIC_ITEM, HILIGHT_COLOR)
-

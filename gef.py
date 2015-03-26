@@ -1299,7 +1299,8 @@ class SolveKernelSymbolCommand(GenericCommand):
 
 
 class DetailRegistersCommand(GenericCommand):
-    """Display full details on one, many or all registers value from current architecture."""
+    """Display full details on one, many or all registers value from current
+    architecture."""
 
     _cmdline_ = "reg"
     _syntax_  = "%s [Register1] [Register2] ... [RegisterN]" % _cmdline_
@@ -1939,7 +1940,8 @@ class ContextCommand(GenericCommand):
 
 
 class HexdumpCommand(GenericCommand):
-    """Display arranged hexdump (according to architecture endianness) of memory range."""
+    """Display arranged hexdump (according to architecture endianness)
+    of memory range."""
 
     _cmdline_ = "xd"
     _syntax_  = "%s (q|d|w|b) LOCATION [SIZE]" % _cmdline_
@@ -2158,7 +2160,8 @@ class VMMapCommand(GenericCommand):
 
 
 class XFilesCommand(GenericCommand):
-    """Shows all libraries (and sections) loaded by binary (Truth is out there)."""
+    """Shows all libraries (and sections) loaded by binary (Truth is
+    out there)."""
 
     _cmdline_ = "xfiles"
     _syntax_  = "%s" % _cmdline_
@@ -2298,7 +2301,8 @@ class XorMemoryPatchCommand(GenericCommand):
 
 
 class TraceRunCommand(GenericCommand):
-    """Create a runtime trace of all instructions executed from $pc to LOCATION specified."""
+    """Create a runtime trace of all instructions executed from $pc to
+    LOCATION specified."""
 
     _cmdline_ = "trace-run"
     _syntax_  = "%s LOCATION [MAX_CALL_DEPTH]" % _cmdline_
@@ -2384,7 +2388,7 @@ class TraceRunCommand(GenericCommand):
         while loc_cur != loc_end:
             try:
                 delta = self.get_frames_size() - frame_count_init
-                if delta <= depth :
+                if delta + 1 <= depth :
                     gdb.execute( "stepi" )
                 else:
                     gdb.execute( "finish" )
