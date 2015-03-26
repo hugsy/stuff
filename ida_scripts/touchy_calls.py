@@ -1,10 +1,10 @@
 from idaapi import *
 
-danger_funcs = ["strcpy", "sprintf", "strncpy"]
+danger_funcs = ["strcpy", "sprintf", "strncpy", "gets", "system"]
 
 for func in danger_funcs:
     print ("Searching for `%s`" % func)
-    for a,f in Names():  # this way is compat with x64
+    for a,f in Names():
         if func in f:
             xrefs = CodeRefsTo( a, False )
             print ("Cross References to `%s` (%#x)" % (f, a))
