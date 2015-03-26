@@ -1,5 +1,5 @@
-################################################################################
-# GEF - GDB Enhanced Features for Exploiters & Reverse-Engineers
+################################################################################################################
+# GEF - Multi-Architecture GDB Enhanced Features for Exploiters & Reverse-Engineers
 #
 # by  @_hugsy_
 #
@@ -15,10 +15,10 @@
 #
 # Tested on
 # * x86-32/x86-64 (even though you should totally use `gdb-peda` (https://github.com/longld/peda) instead)
-# * arm-32/arm-64
-# * mips
-# * powerpc
-# * sparc/sparc64
+# * armv6/armv7/armv8 (untested)
+# * mips32/mips64
+# * powerpc32/powerpc64
+# * sparc
 #
 #
 # Tested on gdb 7.x / python 2.6 & 2.7 & 3.x
@@ -46,24 +46,31 @@ import re
 import tempfile
 import os
 import binascii
+import getopt
 import gdb
 
 
 if sys.version_info.major == 2:
-    import HTMLParser
+    from HTMLParser import HTMLParser
     import itertools
     from cStringIO import StringIO
+    from urllib import urlopen
 
     # Compat Py2/3 hacks
     range = xrange
 
+    PYTHON_MAJOR = 2
+
 elif sys.version_info.major == 3:
     from html.parser import HTMLParser
     from io import StringIO
+    from urllib.request import urlopen
 
     # Compat Py2/3 hack
     long = int
     FileNotFoundError = IOError
+
+    PYTHON_MAJOR = 3
 
 else:
     raise Exception("WTF is this Python version??")
@@ -242,9 +249,9 @@ class Elf:
 
 class GlibcChunk:
 
-    def __init__(self, addr):
+    def __init__(self, addr=None):
         """Init `addr` as a chunk"""
-        self.addr = addr
+        self.addr = addr if addr else process_lookup_path("heap").page_start
         self.arch = get_memory_alignment()/8
         self.start_addr = self.addr - 2*self.arch
         self.size_addr  = self.addr - self.arch
@@ -789,6 +796,18 @@ def process_lookup_address(address):
     return None
 
 
+def process_lookup_path(name, perm=Permission.READ|Permission.WRITE|Permission.EXECUTE):
+    if not is_alive():
+        err("Process is not running")
+        return None
+
+    for sect in get_process_maps():
+        if name in sect.name and sect.perm.value & perm:
+            return sect
+
+    return None
+
+
 def file_lookup_address(address):
     for info in get_info_files():
         if info.zone_start <= address < info.zone_end:
@@ -1091,6 +1110,113 @@ class GenericCommand(gdb.Command):
         # return
 
 
+class CapstoneDisassembleCommand(GenericCommand):
+    """Use capstone disassembly framework to disassemble code."""
+
+    _cmdline_ = "cs-dis"
+    _syntax_  = "%s [-a LOCATION] [-l LENGTH]" % _cmdline_
+
+
+    def pre_load(self):
+        try:
+            import capstone
+        except ImportError:
+            raise GefMissingDependencyException("Missing Python `capstone` package")
+        return
+
+
+    def __init__(self):
+         super(CapstoneDisassembleCommand, self).__init__(complete=gdb.COMPLETE_LOCATION)
+         return
+
+
+    def do_invoke(self, argv):
+        loc, lgt, arm_thumb = None, None, False
+        opts, args = getopt.getopt(argv, 'a:l:t')
+        for o,a in opts:
+            if   o == "-a":   loc = long(a, 16)
+            elif o == "-l":   lgt = long(a)
+            elif o == "-t":   arm_thumb = True
+
+        if loc is None:
+            if not is_alive():
+                warn("No debugging session active")
+                return
+            loc = get_pc()
+
+        if lgt is None :
+            lgt = 0x10
+
+            if is_arm():
+                if arm_thumb: arch, mode = self.get_cs_arch(arm="thumb")
+                else:         arch, mode = self.get_cs_arch(arm="default")
+            else:
+                arch, mode = self.get_cs_arch()
+
+        mem  = read_memory(loc, 0x1000)
+
+        self.disassemble(mem, loc, arch, mode, lgt)
+        return
+
+
+    def get_cs_arch(self, *args, **kwargs):
+        arch = get_arch()
+        mode = get_memory_alignment()
+
+        capstone = sys.modules['capstone']
+
+        if   arch.startswith("i386"):
+            if   mode == 16:  return (capstone.CS_ARCH_X86, capstone.CS_MODE_16)
+            elif mode == 32:  return (capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+            elif mode == 64:  return (capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+            raise GefGenericException("capstone invalid mode for %s" % arch)
+
+        elif arch.startswith("arm"):
+            value = kwargs.get("arm", "default")
+            if value not in ("default", "thumb"):
+                raise GefGenericException("capstone invalid mode for %s" % arch)
+
+            if value == "default":  mode = capstone.CS_MODE_ARM
+            if value == "thumb":    mode = capstone.CS_MODE_THUMB
+            return (capstone.CS_ARCH_ARM, mode)
+
+        elif arch.startswith("mips"):
+            if   mode == 32:  return (capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS32)
+            elif mode == 64:  return (capstone.CS_ARCH_MIPS, capstone.CS_MODE_MIPS64)
+            raise GefGenericException("capstone invalid mode for %s" % arch)
+
+        elif arch.startswith("powerpc"):
+            if   mode == 32:  return (capstone.CS_ARCH_PPC, capstone.CS_MODE_32)
+            elif mode == 64:  return (capstone.CS_ARCH_PPC, capstone.CS_MODE_64)
+            raise GefGenericException("capstone invalid mode for %s" % arch)
+
+        elif arch.startswith("sparc"):
+            return (capstone.CS_ARCH_SPARC, None)
+
+        raise GefGenericException("capstone invalid architecture")
+
+
+    def disassemble(self, code, location, arch, mode, max_inst):
+        inst_num = 0
+        capstone = sys.modules['capstone']
+        cs = capstone.Cs(arch, mode)
+        cs.detail = True
+        code = str(code)
+
+        for (address, size, mnemonic, op_str) in cs.disasm_lite(code, location):
+            m = Color.boldify(Color.blueify(format_address(address))) + "\t\t"
+            m+= Color.greenify("%s" % mnemonic) + "\t"
+            m+= Color.yellowify("%s" % op_str)
+
+            print (m)
+
+            inst_num += 1
+            if inst_num == max_inst:
+                break
+
+        return
+
+
 # http://code.woboq.org/userspace/glibc/malloc/malloc.c.html#malloc_chunk
 class GlibcHeapCommand(GenericCommand):
     """Get some information about the Glibc heap structure."""
@@ -1346,14 +1472,6 @@ class ShellcodeCommand(GenericCommand):
     _syntax_  = "%s (search|get)" % _cmdline_
 
 
-    def pre_load(self):
-        try:
-            import requests
-        except ImportError:
-            raise GefMissingDependencyException("Missing Python `requests` package")
-        return
-
-
     def do_invoke(self, argv):
         self.usage()
         return
@@ -1379,17 +1497,17 @@ class ShellcodeSearchCommand(GenericCommand):
 
 
     def search_shellcode(self, search_options):
-        requests = sys.modules['requests']
-
         # API : http://shell-storm.org/shellcode/
         args = "*".join(search_options)
-        http = requests.get(self.search_url + args)
-        if http.status_code != 200:
-            err("Could not query search page: got %d" % http.status_code)
+        http = urlopen(self.search_url + args)
+        ret  = http.read()
+
+        if http.getcode() != 200:
+            err("Could not query search page: got %d" % http.getcode())
             return
 
         # format: [author, OS/arch, cmd, id, link]
-        lines = http.text.split("\n")
+        lines = ret.split("\n")
         refs = [ line.split("::::") for line in lines ]
 
         info("Showing matching shellcodes")
@@ -1430,19 +1548,23 @@ class ShellcodeGetCommand(GenericCommand):
 
 
     def get_shellcode(self, sid):
-        requests = sys.modules['requests']
+        http = urlopen(self.get_url % sid)
+        ret  = http.read()
 
-        http = requests.get(self.get_url % sid)
-        if http.status_code != 200:
-            err("Could not query search page: got %d" % http.status_code)
+        if http.getcode() != 200:
+            err("Could not query search page: got %d" % http.getcode())
             return
 
         info("Downloading shellcode id=%d" % sid)
         fd, fname = tempfile.mkstemp(suffix=".txt", prefix="sc-", text=True, dir='/tmp')
-        data = http.text.split("\n")[7:-11]
+        data = ret.split("\n")[7:-11]
         buf = "\n".join(data)
-        unesc_buf = HTMLParser().unescape( buf )
-        os.write(fd, bytes(unesc_buf, "UTF-8"))
+        buf = HTMLParser().unescape( buf )
+
+        if PYTHON_MAJOR == 3:
+            buf = bytes(buf, "UTF-8")
+
+        os.write(fd, buf)
         os.close(fd)
         info("Shellcode written as '%s'" % fname)
         return
@@ -2699,8 +2821,10 @@ class GEFCommand(gdb.Command):
                         AliasCommand, AliasShowCommand, AliasSetCommand, AliasUnsetCommand, AliasDoCommand,
                         DumpMemoryCommand,
                         GlibcHeapCommand,
+                        CapstoneDisassembleCommand,
 
                         # add new commands here
+                        # when subcommand, main command must be placed first
                         ]
 
         self.__cmds = [ (x._cmdline_, x) for x in self.classes ]
@@ -2734,8 +2858,21 @@ class GEFCommand(gdb.Command):
 
     def load(self, mod=None):
         loaded = []
+
+        def is_loaded(x):
+            for (n, c) in loaded:
+                if x == n:
+                    return True
+            return False
+
         for (cmd, class_name) in self.__cmds:
             try:
+                if " " in cmd:
+                    # if subcommand, check root command is loaded
+                    root = cmd.split(' ', 1)[0]
+                    if not is_loaded(root):
+                        continue
+
                 class_name()
                 loaded.append( (cmd, class_name)  )
             except Exception as e:
