@@ -232,10 +232,10 @@ if __name__ == "__main__":
 
         if args.output is None:
                 f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
+                os.close(f)
         else:
-                f, ename = open(output, "wb"), args.output
+                ename = args.output
 
-        f.close()
         cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
         if not quiet_mode: print("[+] Compiling '{}'->'{}'".format(cname, ename))
         ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
