@@ -193,14 +193,17 @@ if __name__ == "__main__":
         profile_name = None
 	res_o = ""
         quiet_mode = False
-        available_profiles = ("powerpoint", "excel", "word", "flash", "pdf")
+        available_profiles = ["powerpoint", "excel", "word", "flash", "pdf"]
 
         parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("-p", "--profile", dest="profile_name", default=None,
-                            metavar="PROFILE", help="Specify the profile to use ({})".format(available_profiles))
-        parser.add_argument("-q", "--quiet", dest="quiet_mode", action="store_true", help="Disable verbose output")
+        parser.add_argument("-p", "--profile", default=None, metavar="PROFILE",
+                            help="Specify the profile to use ({})".format(available_profiles))
+        parser.add_argument("-q", "--quiet", action="store_true", help="Disable verbose output", default=False)
         parser.add_argument("-o", "--output", default=None, help="Specify an output file")
         args = parser.parse_args()
+
+        profile_name = args.profile
+        quiet_mode = args.quiet
 
         if profile_name is not None and profile_name not in available_profiles:
                 print("[-] Invalid profile")
@@ -228,10 +231,10 @@ if __name__ == "__main__":
 
 	suffix = PROFILES[ profile_name ][7] if profile_name is not None else ""
 
-        if output is None:
+        if args.output is None:
                 f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
         else:
-                f, ename = open(output, "wb"), output
+                f, ename = open(output, "wb"), args.output
 
         f.close()
         cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
