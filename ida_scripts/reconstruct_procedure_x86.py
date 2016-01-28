@@ -27,19 +27,24 @@ while True:
     if res == idaapi.BADADDR:
         break
 
-    print "[+] Matching at %#x" % res
-    idc.Jump(res)
-    col = idc.GetColor(res, idc.CIC_ITEM)
-    idc.SetColor(res, idc.CIC_ITEM, hilight_color)
-    idc.SetColor(res + 1, idc.CIC_ITEM, hilight_color)
+    func = idc.GetFuncOffset(res)
+    if func is not None:
+        print "[*] %#x already matching function %s" % (res, func)
+    else:
+        print "[+] Matching at %#x" % res
+        idc.Jump(res)
+        col = idc.GetColor(res, idc.CIC_ITEM)
+        idc.SetColor(res, idc.CIC_ITEM, hilight_color)
+        idc.SetColor(res + 1, idc.CIC_ITEM, hilight_color)
 
-    ret = idc.AskYN(0, "Would you like to create a function at %#x ?" % res)
-    if ret == 1:
-        idc.MakeFunction(res)
-        print "[+] Creating function at %#x" % res
+        ret = idc.AskYN(0, "Would you like to create a function at %#x ?" % res)
+        if ret == 1:
+            idc.MakeFunction(res)
+            print "[+] Creating function at %#x" % res
 
-    idc.SetColor(res, idc.CIC_ITEM, col)
-    idc.SetColor(res + 1, idc.CIC_ITEM, col)
+        idc.SetColor(res, idc.CIC_ITEM, col)
+        idc.SetColor(res + 1, idc.CIC_ITEM, col)
+
     addr = res + len(prolog_sequence)
 
 print "[!] EOT"
