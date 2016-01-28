@@ -1,14 +1,17 @@
-#
-# color execution flow from windbg logfile
-#
-# in windbg
-# 0:000> bp 0xStartAdress
-# 0:000> .logopen c:\temp\myapp.log
-# 0:000> pa 0xEndAddress
-# 0:000> .logclose
-#
-# note: watch out for aslr
-#
+"""
+IDA script to color execution flow, i.e. highlight all instructions taken by runtime 
+from a WinDBG log file.
+
+In WinDBG, generate a trace log with the following sequence:
+0:000> bp 0xStartAdress
+0:000> .logopen c:\temp\myapp.log
+0:000> pa 0xEndAddress
+0:000> .logclose
+
+Note: watch out for aslr
+
+@_hugsy_
+"""
 
 from idc import *
 from idaapi import *
