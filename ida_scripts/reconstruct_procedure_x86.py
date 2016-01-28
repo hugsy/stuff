@@ -15,10 +15,10 @@ import idaapi
 import sys
 import idautils
 
+
 hilight_color = 0x009900
 prolog_sequence = "55 89 e5"
 ea = idc.ScreenEA()
-
 addr = idc.SegStart(ea)
 print "[!] Analyzing from %#x" % addr
 
