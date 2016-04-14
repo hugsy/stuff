@@ -357,7 +357,7 @@ def generate_code_file(fd, key, template="win32", show_disass=False):
 
 if __name__ == "__main__":
     res_o = ""
-    available_profiles = ["powerpoint", "excel", "word", "flash", "pdf"]
+    available_profiles = ["powerpoint", "excel", "word", "flash", "pdf",]
     HOME = os.getenv("HOME")
 
     parser = argparse.ArgumentParser(description="Yet another payload encoder")
@@ -379,6 +379,7 @@ if __name__ == "__main__":
         print("[-] Invalid profile")
         sys.exit(1)
 
+    args.ico = os.path.realpath(args.ico)
 
     PROFILES = {
         # index : [Version, /path/to/ico, CompanyName, Description, Name, CopyrightName]
