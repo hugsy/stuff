@@ -97,7 +97,7 @@ class Ida:
     def add_comment(self, address, comment):
         """ ida.add_comment(int addr, string comment) => None
         Add a comment to the current IDB at the location `address`.
-        Exemple: ida.add_comment 0x40000 "Important call here!"
+        Example: ida.add_comment 0x40000 "Important call here!"
         """
         addr = long(address, 16) if ishex(address) else long(address)
         MakeComm(addr, comment)
@@ -108,7 +108,7 @@ class Ida:
     def set_color(self, address, color="0x005500"):
         """ ida.set_color(int addr [, int color]) => None
         Set the location pointed by `address` in the IDB colored with `color`.
-        Exemple: ida.set_color 0x40000
+        Example: ida.set_color 0x40000
         """
         addr = long(address, 16) if ishex(address) else long(address)
         color = long(color, 16) if ishex(color) else long(color)
