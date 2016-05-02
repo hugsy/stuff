@@ -72,29 +72,21 @@ Making it very easy to bind with Scapy or else.
 from __future__ import with_statement  # pour python 2.5 et 2.6
 from xml.etree import ElementTree
 from xml.parsers.expat import ExpatError
-from sys import argv, version_info
+from sys import argv, version_info, stdout
 from argparse import ArgumentParser
 from os import access, R_OK
 from logging import Formatter, StreamHandler, DEBUG, INFO, getLogger
 from datetime import datetime
 from hashlib import md5
 from os import path
-import sqlite3
+from sqlite3 import connect as pysql_connect
+from sqlite3 import Error as SQLError, DatabaseError, ProgrammingError
+
 
 mj, mn = version_info[0:2]
 if mj < 2 or mn < 6:
     raise ImportError ("Python version must be at least 2.6+")
 
-
-
-#
-# import non built-in packages
-#
-try :
-    from sqlite3 import connect as pysql_connect
-    from sqlite3 import Error as SQLError, DatabaseError, ProgrammingError
-except ImportError:
-    print ("[-] Missing python-sqlite3 package")
 
 try:
     from relatorio.templates.opendocument import Template
@@ -318,8 +310,9 @@ Hosts list:
 <td class="column right">Operating System</td>
 </tr>
 """
-        for h in self.nmap_results.hosts:
-            buf += """
+        if len(self.nmap_results.hosts) > 0:
+            for h in self.nmap_results.hosts:
+                buf += """
 <tr>
 <td><a href="#ip-{0}">{0}</a></td>
 <td>{1} {2}</td>
@@ -341,7 +334,6 @@ Hosts list:
 Ports list:
 </td>
 </tr>
-
 """
 
         img_path = "./img/"
@@ -352,16 +344,14 @@ Ports list:
             self.add_thumb = False
 
         for h in self.nmap_results.hosts :
+            if len(h.ports)==0:
+                continue
+
             buf += """
 <tr>
 <td class="subchildframe">
 <table cellspacing="0">
-<tbody><tr>
-<!--
-<td colspan="4" class="subtableheader" onclick="ShowOrHideTable(this);" id="ip-{0}">Detail: {0}</td>
--->
-<td colspan="4" class="subtableheader" id="ip-{0}">Detail: {0}</td>
-</tr>
+<tbody><tr><td colspan="4" class="subtableheader" id="ip-{0}">Detail: {0}</td></tr>
 
 <tr>
 <td class="column right">Protocol</td>
@@ -457,6 +447,7 @@ class SqliteUNmapPlugin (UNmapPlugin):
             req = "CREATE TABLE IF NOT EXISTS {0}(".format(self.table_name)
             req += "ip VARCHAR, "
             req += "port INTEGER, "
+            req += "protocol VARCHAR, "
             req += "banner VARCHAR, "
             req += "os VARCHAR)"
 
@@ -469,11 +460,12 @@ class SqliteUNmapPlugin (UNmapPlugin):
             for h in self.nmap_results.hosts :
                 for p in h.ports:
                     banner = " ".join([p.product, p.version, p.extrainfo]).strip()
-                    req = "INSERT INTO {0} VALUES ('{1}',{2},'{3}','{4}')".format(self.table_name,
-                                                                                  h.ip,
-                                                                                  int(p.port),
-                                                                                  banner,
-                                                                                  h.os)
+                    req = "INSERT INTO {0} VALUES ('{1}',{2},'{3}','{4}','{5}')".format(self.table_name,
+                                                                                        h.ip,
+                                                                                        int(p.port),
+                                                                                        p.protocol,
+                                                                                        banner,
+                                                                                        h.os)
                     execute_sql(req, sql_ctx)
                     idx += 1
 
@@ -501,15 +493,16 @@ class FileUNmapPlugin(UNmapPlugin):
         global verbose
 
         with open(self.filename, 'w') as fd:
-            fd.write('%15s %6s %s\n' % ("IP", "Port", "Service"))
+            fd.write('%15s %11s %s\n' % ("IP", "Port", "Service"))
 
             for h in self.nmap_results.hosts:
                 for p in h.ports:
                     banner = '(' + " ".join([p.product, p.version, p.extrainfo]) + ')'
-                    fd.write('%15s %6s %s %s\n' % (h.ip,
-                                                   p.port,
-                                                   p.service,
-                                                   banner))
+                    fd.write('%15s %6s/%-5s %s %s\n' % (h.ip,
+                                                        p.port,
+                                                        p.protocol,
+                                                        p.service,
+                                                        banner))
                 fd.flush()
 
 
@@ -530,17 +523,52 @@ class TextUNmapPlugin(UNmapPlugin):
     def export(self):
         from sys import stdout
 
-        stdout.write('%15s %6s %s\n' % ("IP", "Port", "Service"))
+        stdout.write('%18s %10s   %s\n' % ("IP", "Port", "Service"))
 
         for h in self.nmap_results.hosts:
             for p in h.ports:
                 banner = '(' + " ".join([p.product, p.version, p.extrainfo]).strip() + ')'
-                stdout.write('%15s %6s %s %s\n' % (h.ip,
-                                                   p.port,
-                                                   p.service,
-                                                   banner))
+                stdout.write('%18s %6s/%-5s %s %s\n' % (h.ip,
+                                                        p.port,
+                                                        p.protocol,
+                                                        p.service,
+                                                        banner))
             stdout.flush()
 
+
+class CsvUNmapPlugin(UNmapPlugin):
+    """
+    UNmap plugin for exporting unmap results in CSV format
+    """
+
+    def __init__(self, nmap_results, **kwargs):
+        UNmapPlugin.__init__(self, nmap_results, **kwargs)
+
+        if self.verbose :
+            self.logger.info("Output will be written in stdout")
+
+        del self.filename
+        return
+
+
+    def export(self):
+        fmt = '"{}" ; "{}" ; "{}"\n'
+
+        line =  fmt.format("IP", "Port", "Service")
+        stdout.write(line)
+
+        for h in self.nmap_results.hosts:
+            for p in h.ports:
+                banner = '(' + " ".join([p.product, p.version, p.extrainfo]).strip() + ')'
+                if len(banner) > 2:
+                    service = p.service + ' ' + banner
+                else:
+                    service = p.service
+
+                stdout.write(fmt.format(h.ip, p.port, service))
+            stdout.flush()
+
+        return
 
 
 class OdtUNmapPlugin(UNmapPlugin):
@@ -625,32 +653,39 @@ class OdtUNmapPlugin(UNmapPlugin):
             self.logger.error("export failed : %s" % e)
 
 
-class Host :
-    """
-    Host object definition
-    """
-    def __init__(self):
-        self.ip = ''
-        self.mac= ''
-        self.vendor = ''
-        self.ports = []
-        self.banner = []
-        self.os = ''
 
 
 class Port :
     """
     Port object definition
     """
-    def __init__ (self):
-        self.port = 0
-        self.protocol = ''
-        self.service = ''
-        self.product = ''
-        self.version = ''
-        self.extrainfo = ''
+    def __init__ (self, *args, **kwargs):
+        for i in ["port", "protocol", "service", "product", "version", "extrainfo"]:
+            setattr(self, i, kwargs.get(i, ''))
 
 
+class Host :
+    """
+    Host object definition
+    """
+    def __init__(self, *args, **kwargs):
+        self.ports = []
+        self.banner = []
+
+        for i in ["ip", "mac", "vendor", "os"]:
+            setattr(self, i, kwargs.get(i, ''))
+
+
+    def get_or_create_port(self, portnum, protocol):
+        port = None
+
+        for p in self.ports:
+            if p.port==portnum and p.protocol==protocol:
+                return p
+
+        port = Port(port=portnum, protocol=protocol)
+        self.ports.append(port)
+        return port
 
 
 class UNmap :
@@ -687,52 +722,27 @@ class UNmap :
 
         for fic in filelist:
 
-            if fic == "" or not access (fic, R_OK):
-                self.logger.error ("Could not read file %s, skipping" % fic)
+            et = self.parse_xml(fic)
+            if et == -1:
                 continue
 
-            et = None
-            while et is None :
-                try :
-                    et = ElementTree.parse(fic)
-
-                except ExpatError, xpe:
-                    self.logger.error("XML Parse Error %s" % xpe)
-                    SEEK_END = 2
-                    with open(fic, "r") as f:
-                        f.seek(-(len("</nmaprun>")+2), SEEK_END)
-                        content = f.read()
-
-                    # most of the time, broken xml file is generated because nmap was
-                    # interrupted, resulting in a missing final '</nmaprun>' flag
-                    if "</nmaprun>" not in content:
-                        self.logger.info("XML '%s' seems broken (nmap not finished ?)"%fic)
-                        if raw_input("Would you like to try to repair '%s' [y/N]? "%fic) in ("y","Y"):
-                            with open(fic, "a") as f:
-                                f.write("</nmaprun>\n")
-                            et = None
-                        else :
-                            et = -1
-
-                except Exception, e:
-                    self.logger.error("Exception raised: %s" % e)
-                    et = -1
-
-            if et == -1:
-                return None
-
             for h in et.findall("host"):
-                host = Host()
+                ip, mac, vendor = None, None, None
 
                 # addresses gathering
                 for address in h.findall("address"):
                     if address.attrib.has_key("addrtype") :
                         if address.attrib["addrtype"] == "ipv4" :
-                            host.ip = address.attrib["addr"]
+                            ip = address.attrib["addr"]
                         elif address.attrib["addrtype"] == "mac" :
-                            host.mac = address.attrib["addr"]
-                            host.vendor = address.attrib["vendor"]
+                            mac = address.attrib["addr"]
+                            vendor = address.attrib["vendor"]
 
+                host = self.get_or_create_host_by_ip(ip)
+                if host.mac is None and mac is not None:
+                    host.mac = mac
+                if host.vendor is None and vendor is not None:
+                    host.vendor = vendor
 
                 if self.show_only :
                     if len(self.filter_ips):
@@ -756,28 +766,28 @@ class UNmap :
 
                 # ports discovery
                 for p in h.findall("ports/port"):
-                    port = Port()
+                    state = p.find("state")
+                    if state.attrib["state"] != "open":
+                        continue
 
-                    port.port = int(p.attrib["portid"])
-                    port.protocol = p.attrib["protocol"]
-
+                    portnum = int(p.attrib["portid"])
+                    protocol = p.attrib["protocol"]
                     if self.show_only :
                         if len(self.filter_ports):
-                            filter_rule = port.port not in self.filter_ports
+                            filter_rule = portnum not in self.filter_ports
                         else :
                             filter_rule = False
 
                     else :
-                        filter_rule = port.port in self.filter_ports
+                        filter_rule = portnum in self.filter_ports
 
                     if filter_rule :
                         if verbose:
                             self.logger.info("Ignoring port %d/%s" % (port.port, port.protocol))
                         continue
 
-                    state = p.find("state")
-                    if state.attrib["state"] != "open":
-                        continue
+
+                    port = host.get_or_create_port(portnum, protocol)
 
                     svc = p.find("service")
 
@@ -806,10 +816,8 @@ class UNmap :
 
                     if verbose:
                         self.logger.info("New port : %d/%s (%s)" % (port.port,
-                                                        port.protocol,
-                                                        port.product))
-
-                    host.ports.append(port)
+                                                                    port.protocol,
+                                                                    port.product))
 
 
                 # OS matching
@@ -839,15 +847,56 @@ class UNmap :
                     self.logger.info("New host OS: %s" % host.os)
 
 
-                found = False
-                for h in self.hosts:
-                    if h.ip == host.ip :
-                        if verbose:
-                            self.logger.error("IP conflict detected on '%s'. Cannot add" % h.ip)
-                        found = True
+    def parse_xml(self, f):
+        """
+        Parse the Nmap XML output and return a pointer to the lxml object or -1 if unsuccessful
+        """
+        if f == "" or not access (f, R_OK):
+            self.logger.error ("Could not read file %s, skipping" % fic)
+            return -1
 
-                if not found:
-                    self.hosts.append(host)
+        et = None
+        while et is None :
+            try :
+                et = ElementTree.parse(f)
+
+            except ExpatError, xpe:
+                self.logger.error("XML Parse Error %s" % xpe)
+                SEEK_END = 2
+                with open(fic, "r") as f:
+                    f.seek(-(len("</nmaprun>")+2), SEEK_END)
+                    content = f.read()
+
+                # most of the time, broken xml file is generated because nmap was
+                # interrupted, resulting in a missing final '</nmaprun>' flag
+                if "</nmaprun>" not in content:
+                    self.logger.info("XML '%s' seems broken (nmap not finished ?)"%fic)
+                    if raw_input("Would you like to try to repair '%s' [y/N]? "%fic) in ("y","Y"):
+                        with open(fic, "a") as f:
+                            f.write("</nmaprun>\n")
+                        et = None
+                    else :
+                        et = -1
+
+            except Exception, e:
+                self.logger.error("Exception raised: %s" % e)
+                et = -1
+
+        return et
+
+
+    def get_or_create_host_by_ip(self, ip):
+        """
+        Returns the host object matching an IP address.
+        """
+        for host in self.hosts:
+            if host.ip == ip:
+                return host
+
+        h = Host(ip=ip)
+        self.hosts.append(h)
+
+        return h
 
 
     def find_ip_by_port(self, port_num):
@@ -912,7 +961,8 @@ SUPPORTED_FORMATS = {"txt": TextUNmapPlugin,
                      "file": FileUNmapPlugin,
                      "sql": SqliteUNmapPlugin,
                      "odt": OdtUNmapPlugin,
-                     "html": HtmlUNmapPlugin,}
+                     "html": HtmlUNmapPlugin,
+                     "csv": CsvUNmapPlugin,}
 
 
 
@@ -923,6 +973,7 @@ if __name__ == "__main__":
     RED   = "\x1B[31m"
     GREEN = "\x1B[32m"
     BLUE  = "\x1B[34m"
+    print(SUPPORTED_FORMATS)
 
     parser = ArgumentParser(description=__desc__,
                             epilog="\t---[ EOT ]---",
@@ -1025,11 +1076,10 @@ if __name__ == "__main__":
         logger.info("Service name filter: " + (" ".join(args.filter_services) \
                                                if len(args.filter_services) else "[]" ))
 
-    unmap = UNmap (args.filelist,
-                   args.filter_ips, args.filter_ports, args.filter_services,
-                   args.show_only)
+    unmap = UNmap (args.filelist, args.filter_ips, args.filter_ports,
+                   args.filter_services, args.show_only)
 
-    if unmap == None:
+    if unmap is None:
         exit(1)
 
     plugin = SUPPORTED_FORMATS[args.type]
