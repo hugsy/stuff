@@ -72,7 +72,12 @@ class Ida:
         """
         Class method listing (required for introspection API).
         """
-        return list_public_methods(self)
+        m = []
+        for x in list_public_methods(self):
+            if x.startswith("_"): continue
+            if not is_exposed( getattr(self, x) ): continue
+            m.append(x)
+        return m
 
 
     def _methodHelp(self, method):
@@ -87,6 +92,7 @@ class Ida:
     def shutdown(self):
         """ ida.shutdown() => None
         Cleanly shutdown the XML-RPC service.
+        Example: ida.shutdown
         """
         self.server.server_close()
         print("XMLRPC server stopped")
@@ -129,7 +135,7 @@ def start_xmlrpc_server():
                                 requestHandler=RequestHandler,
                                 logRequests=True)
     server.register_introspection_functions()
-    server.register_instance(Ida(server))
+    server.register_instance( Ida(server) )
     print("[+] Registered {} functions.".format( len(server.system_listMethods()) ))
     server.serve_forever()
     return
