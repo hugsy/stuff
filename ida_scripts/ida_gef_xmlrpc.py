@@ -122,6 +122,14 @@ class Ida:
         return
 
 
+    # ideas for commands:
+    # - rebase program based on gdb runtime value
+    # - run ida plugin remotely
+    # - edit gdb/capstone disassembly view to integrate comments from idb
+    # - generic command about idb : path/dir/hash etc.
+    # - use MakeName(addr,name) to change a location/function name
+    # - details of xref to a given address
+    # -
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ("/RPC2",)
 
