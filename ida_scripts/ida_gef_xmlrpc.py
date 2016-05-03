@@ -96,8 +96,7 @@ class Ida:
         """
         self.server.server_close()
         print("XMLRPC server stopped")
-        return
-
+        return 0
 
     @expose
     def add_comment(self, address, comment):
@@ -106,9 +105,7 @@ class Ida:
         Example: ida.add_comment 0x40000 "Important call here!"
         """
         addr = long(address, 16) if ishex(address) else long(address)
-        MakeComm(addr, comment)
-        return
-
+        return MakeComm(addr, comment)
 
     @expose
     def set_color(self, address, color="0x005500"):
@@ -118,8 +115,25 @@ class Ida:
         """
         addr = long(address, 16) if ishex(address) else long(address)
         color = long(color, 16) if ishex(color) else long(color)
-        SetColor(addr, CIC_ITEM, color)
-        return
+        return SetColor(addr, CIC_ITEM, color)
+
+    @expose
+    def set_name(self, address, name):
+        """ ida.set_name(int addr, string name]) => None
+        Set the location pointed by `address` with the name specified as argument.
+        Example: ida.set_name 0x00000000004049de __entry_point
+        """
+        addr = long(address, 16) if ishex(address) else long(address)
+        return MakeName(addr, name)
+
+    @expose
+    def jump_to(self, address):
+        """ ida.jump_to(int addr) => None
+        Move the IDA EA pointer to the address pointed by `addr`.
+        Example: ida.jump_to 0x00000000004049de
+        """
+        addr = long(address, 16) if ishex(address) else long(address)
+        return Jump(addr)
 
 
     # ideas for commands:
@@ -127,9 +141,9 @@ class Ida:
     # - run ida plugin remotely
     # - edit gdb/capstone disassembly view to integrate comments from idb
     # - generic command about idb : path/dir/hash etc.
-    # - use MakeName(addr,name) to change a location/function name
     # - details of xref to a given address
-    # -
+
+
 class RequestHandler(SimpleXMLRPCRequestHandler):
     rpc_paths = ("/RPC2",)
 
