@@ -973,7 +973,6 @@ if __name__ == "__main__":
     RED   = "\x1B[31m"
     GREEN = "\x1B[32m"
     BLUE  = "\x1B[34m"
-    print(SUPPORTED_FORMATS)
 
     parser = ArgumentParser(description=__desc__,
                             epilog="\t---[ EOT ]---",
