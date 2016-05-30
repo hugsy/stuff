@@ -110,7 +110,7 @@ def safe_enumshares(smb):
 
 
 def smbwalk(smb, share, regex, path='\\', tid=None, *args, **kwargs):
-    max_size = kwargs.get("max_size") or 10*1024*1024
+    max_size = kwargs.get("max_size") or 100*1024
     ip = smb.getRemoteHost()
     try:
         if tid is None:
@@ -202,13 +202,13 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--port", type=int, default=445,
                         help="Use any alternative SMB port (default: 445)")
 
-    parser.add_argument("-U", "--username", type=str, default="",
+    parser.add_argument("-U", "--username", type=str, default="guest",
                         help="Username to use to connect")
 
     parser.add_argument("-D", "--domain", type=str, default="",
                         help="Domain associated to username")
 
-    parser.add_argument("-P", "--password", type=str, default="",
+    parser.add_argument("-P", "--password", type=str, default="guest",
                         help="Password associated to username")
 
     parser.add_argument("-r", "--regex", type=str, default=None,
