@@ -89,14 +89,20 @@ if mj < 2 or mn < 6:
 
 
 try:
-    from relatorio.templates.opendocument import Template
+    import relatorio.templates.opendocument
+except ImportError :
+    pass
+
+try:
+    import docxtpl
+    import docx.shared
+    import docx.enum.text
 except ImportError :
     pass
 
 
-
 __author__     =  "@_hugsy_"
-__version__    =  "0.3"
+__version__    =  "0.4"
 __licence__    =  "WTFPL v.2"
 __file__       =  "unmap.py"
 __desc__       =  """ Convert nmap xml output to human exploitable data.
@@ -559,13 +565,7 @@ class CsvUNmapPlugin(UNmapPlugin):
 
         for h in self.nmap_results.hosts:
             for p in h.ports:
-                banner = '(' + " ".join([p.product, p.version, p.extrainfo]).strip() + ')'
-                if len(banner) > 2:
-                    service = p.service + ' ' + banner
-                else:
-                    service = p.service
-
-                stdout.write(fmt.format(h.ip, p.port, service))
+                stdout.write(fmt.format(h.ip, p.port, p.banner))
             stdout.flush()
 
         return
@@ -584,22 +584,18 @@ class OdtUNmapPlugin(UNmapPlugin):
             print ("[-] Missing python-relatorio package")
             exit(1)
 
+        if not kwargs.has_key("template"):
+            print ("[-] Your must provide a template ODT file for this plugin.")
+            exit(1)
+
         self.add_suffix(".odt")
 
         if self.verbose:
             self.logger.info("Writing ODT file to '%s'" % self.filename)
 
-        if kwargs.has_key("template"):
-            self.template = kwargs["template"]
-        else :
-            # assume that relatorio odt template is same directory that unmap
-            self.template = path.dirname(path.abspath(argv[0])) + "/templates_oo/relatorio_template_tableau_nmap_nice.odt"
-
+        self.template = kwargs["template"]
         self.content = []
         self.summary = []
-
-        if kwargs.has_key("template"):
-            self.template = kwargs["template"]
 
 
     def sort_data(self):
@@ -640,7 +636,7 @@ class OdtUNmapPlugin(UNmapPlugin):
 
         try :
             relatorio =  sys.modules['relatorio']
-            template = templates.opendocument.Template(source=None, filepath=self.template)
+            template = relatorio.templates.opendocument.Template(source=None, filepath=self.template)
             data = template.generate(o=tab).render().getvalue()
 
             if len(tab['lines']) > 0:
@@ -654,6 +650,45 @@ class OdtUNmapPlugin(UNmapPlugin):
 
 
 
+class DocxOdtUNmapPlugin(UNmapPlugin):
+    """
+    Docx plugin for generating MS Office DOCX document.
+    This requires docxtpl module (https://pypi.python.org/pypi/docxtpl)
+    """
+
+    def __init__(self, nmap_results, **kwargs):
+        UNmapPlugin.__init__(self, nmap_results, **kwargs)
+
+        if 'docxtpl' not in sys.modules.keys():
+            print ("[-] Missing docxtpl package")
+            exit(1)
+
+        if not kwargs.has_key("template"):
+            print ("[-] Your must provide a template DOCX file for this plugin.")
+            exit(1)
+
+        self.add_suffix(".docx")
+
+        if self.verbose:
+            self.logger.info("Writing docx file to '%s'" % self.filename)
+
+        self.template = kwargs["template"]
+        self.content = []
+        self.summary = []
+
+
+    def export(self):
+        ctx = {"tcp": self.nmap_results.hosts , "udp": []}
+
+        try :
+            docxtpl =  sys.modules["docxtpl"]
+            docx = docxtpl.DocxTemplate(self.template)
+            docx.render(ctx)
+            self.docx.save(self.filename)
+
+        except Exception as e:
+            self.logger.error("export failed : %s" % e)
+
 
 class Port :
     """
@@ -663,6 +698,9 @@ class Port :
         for i in ["port", "protocol", "service", "product", "version", "extrainfo"]:
             setattr(self, i, kwargs.get(i, ''))
 
+    @property
+    def banner(self):
+        return self.service + "(" +" ".join([self.product, self.version, self.extrainfo]).strip() + ")"
 
 class Host :
     """
@@ -927,7 +965,7 @@ class Database:
 
     def __init__(self, db_path, *args, **kwargs):
         self.db = db_path
-        self.conn = sqlite3.connect( self.db )
+        self.conn = pysql_connect( self.db )
         return
 
     def get_ip_by_ports(self, *args):
@@ -962,7 +1000,8 @@ SUPPORTED_FORMATS = {"txt": TextUNmapPlugin,
                      "sql": SqliteUNmapPlugin,
                      "odt": OdtUNmapPlugin,
                      "html": HtmlUNmapPlugin,
-                     "csv": CsvUNmapPlugin,}
+                     "csv": CsvUNmapPlugin,
+                     "docx": DocxOdtUNmapPlugin,}
 
 
 
@@ -1025,9 +1064,8 @@ if __name__ == "__main__":
     parser.add_argument("--list", dest="list", action="store_true",
                         default=False, help="Shows group signification [default: False]")
 
-    parser.add_argument("--template", type=str, metavar="ODT_TEMPLATE",
-                        dest="template", help="specify new template file",
-                        default=path.dirname(argv[0]) + "/templates_oo/relatorio_template_tableau_nmap_nice.odt")
+    parser.add_argument("--template", type=str, metavar="TEMPLATE",
+                        dest="template", help="specify new template file")
 
     parser.add_argument("--genthumbs", dest="add_thumb", action="store_true",
                         help="Generate HTTP thumbnails on the fly", default=False)

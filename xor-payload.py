@@ -239,7 +239,6 @@ def obfuscate(fname):
 
 def echo(fd, m):
     os.write(fd, m.encode("utf-8"))
-    os.fsync(fd)
     return
 
 
