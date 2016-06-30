@@ -5,8 +5,6 @@
 #
 # https://msdn.microsoft.com/en-us/library/ms253512(v=vs.90).aspx
 #
-# Author: Christophe Alladoum
-# Copyright Sense of Security 2016
 #
 from idautils import *
 from idc import *
