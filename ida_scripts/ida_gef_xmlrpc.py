@@ -24,6 +24,7 @@ import inspect
 HOST = "0.0.0.0"
 PORT = 1337
 
+DEBUG = True
 
 def expose(f):
     "Decorator to set exposed flag on a function."
@@ -45,8 +46,6 @@ class Ida:
     """
     Top level class where exposed methods are declared.
     """
-    PREFIX = "ida"
-
 
     def __init__(self, server, *args, **kwargs):
         self.server = server
@@ -57,14 +56,15 @@ class Ida:
         """
         Plugin dispatcher
         """
-        if not method.startswith(self.PREFIX + '.'):
-            raise NotImplementedError('Method "%s" is not supported' % method)
+        if DEBUG:
+            print("Received '%s'" % method)
 
-        method_name = method.partition('.')[2]
-        func = getattr(self, method_name)
+        func = getattr(self, method)
         if not is_exposed(func):
             raise NotImplementedError('Method "%s" is not exposed' % method)
 
+        if DEBUG:
+            print("Executing %s(%s)" % (method, params))
         return func(*params)
 
 
@@ -90,47 +90,47 @@ class Ida:
 
     @expose
     def shutdown(self):
-        """ ida.shutdown() => None
+        """ shutdown() => None
         Cleanly shutdown the XML-RPC service.
-        Example: ida.shutdown
+        Example: ida shutdown
         """
         self.server.server_close()
         print("XMLRPC server stopped")
         return 0
 
     @expose
-    def add_comment(self, address, comment):
-        """ ida.add_comment(int addr, string comment) => None
+    def MakeComm(self, address, comment):
+        """ MakeComm(int addr, string comment) => None
         Add a comment to the current IDB at the location `address`.
-        Example: ida.add_comment 0x40000 "Important call here!"
+        Example: ida MakeComm 0x40000 "Important call here!"
         """
         addr = long(address, 16) if ishex(address) else long(address)
         return MakeComm(addr, comment)
 
     @expose
-    def set_color(self, address, color="0x005500"):
-        """ ida.set_color(int addr [, int color]) => None
+    def SetColor(self, address, color="0x005500"):
+        """ SetColor(int addr [, int color]) => None
         Set the location pointed by `address` in the IDB colored with `color`.
-        Example: ida.set_color 0x40000
+        Example: ida SetColor 0x40000
         """
         addr = long(address, 16) if ishex(address) else long(address)
         color = long(color, 16) if ishex(color) else long(color)
         return SetColor(addr, CIC_ITEM, color)
 
     @expose
-    def set_name(self, address, name):
-        """ ida.set_name(int addr, string name]) => None
+    def MakeName(self, address, name):
+        """ MakeName(int addr, string name]) => None
         Set the location pointed by `address` with the name specified as argument.
-        Example: ida.set_name 0x00000000004049de __entry_point
+        Example: ida MakeName 0x00000000004049de __entry_point
         """
         addr = long(address, 16) if ishex(address) else long(address)
         return MakeName(addr, name)
 
     @expose
-    def jump_to(self, address):
-        """ ida.jump_to(int addr) => None
+    def Jump(self, address):
+        """ Jump(int addr) => None
         Move the IDA EA pointer to the address pointed by `addr`.
-        Example: ida.jump_to 0x00000000004049de
+        Example: ida Jump 0x0004049de
         """
         addr = long(address, 16) if ishex(address) else long(address)
         return Jump(addr)
@@ -155,7 +155,7 @@ def start_xmlrpc_server():
     print("[+] Starting XMLRPC server: {}:{}".format(HOST, PORT))
     server = SimpleXMLRPCServer((HOST, PORT),
                                 requestHandler=RequestHandler,
-                                logRequests=True)
+                                logRequests=DEBUG)
     server.register_introspection_functions()
     server.register_instance( Ida(server) )
     print("[+] Registered {} functions.".format( len(server.system_listMethods()) ))
