@@ -13,10 +13,11 @@
 
 from __future__ import print_function
 
-from threading import Thread
 from SimpleXMLRPCServer import SimpleXMLRPCRequestHandler, SimpleXMLRPCServer, list_public_methods
-from idautils import *
-from idc import *
+
+import threading
+import idautils
+import idc
 
 import string
 import inspect
@@ -105,7 +106,7 @@ class Ida:
         Example: ida MakeComm 0x40000 "Important call here!"
         """
         addr = long(address, 16) if ishex(address) else long(address)
-        return MakeComm(addr, comment)
+        return idc.MakeComm(addr, comment)
 
     @expose
     def SetColor(self, address, color="0x005500"):
@@ -115,25 +116,25 @@ class Ida:
         """
         addr = long(address, 16) if ishex(address) else long(address)
         color = long(color, 16) if ishex(color) else long(color)
-        return SetColor(addr, CIC_ITEM, color)
+        return idc.SetColor(addr, CIC_ITEM, color)
 
     @expose
     def MakeName(self, address, name):
         """ MakeName(int addr, string name]) => None
         Set the location pointed by `address` with the name specified as argument.
-        Example: ida MakeName 0x00000000004049de __entry_point
+        Example: ida MakeName 0x4049de __entry_point
         """
         addr = long(address, 16) if ishex(address) else long(address)
-        return MakeName(addr, name)
+        return idc.MakeName(addr, name)
 
     @expose
     def Jump(self, address):
         """ Jump(int addr) => None
         Move the IDA EA pointer to the address pointed by `addr`.
-        Example: ida Jump 0x0004049de
+        Example: ida Jump 0x4049de
         """
         addr = long(address, 16) if ishex(address) else long(address)
-        return Jump(addr)
+        return idc.Jump(addr)
 
 
     # ideas for commands:
@@ -164,7 +165,7 @@ def start_xmlrpc_server():
 
 
 if __name__ == "__main__":
-    t = Thread(target=start_xmlrpc_server, args=())
+    t = threading.Thread(target=start_xmlrpc_server, args=())
     t.daemon = True
     print("[+] Creating new thread for XMLRPC server: {}".format(t.name))
     t.start()
