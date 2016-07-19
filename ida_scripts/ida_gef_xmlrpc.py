@@ -39,8 +39,7 @@ def is_exposed(f):
 
 
 def ishex(s):
-    if s.startswith("0x") or s.startswith("0X"): s = s[2:]
-    return all(c in set(string.hexdigits) for c in s)
+    return s.startswith("0x") or s.startswith("0X")
 
 
 class Ida:
