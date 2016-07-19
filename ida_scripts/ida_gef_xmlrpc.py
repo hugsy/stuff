@@ -96,6 +96,7 @@ class Ida:
         """
         self.server.server_close()
         print("XMLRPC server stopped")
+        setattr(self.server, "shutdown", True)
         return 0
 
     @expose
@@ -159,7 +160,11 @@ def start_xmlrpc_server():
     server.register_introspection_functions()
     server.register_instance( Ida(server) )
     print("[+] Registered {} functions.".format( len(server.system_listMethods()) ))
-    server.serve_forever()
+    while True:
+        if hasattr(server, "shutdown") and server.shutdown==True:
+            break
+        server.handle_request()
+
     return
 
 
