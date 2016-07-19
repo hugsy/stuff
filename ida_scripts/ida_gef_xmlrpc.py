@@ -156,7 +156,8 @@ def start_xmlrpc_server():
     print("[+] Starting XMLRPC server: {}:{}".format(HOST, PORT))
     server = SimpleXMLRPCServer((HOST, PORT),
                                 requestHandler=RequestHandler,
-                                logRequests=DEBUG)
+                                logRequests=DEBUG,
+                                allow_none=True)
     server.register_introspection_functions()
     server.register_instance( Ida(server) )
     print("[+] Registered {} functions.".format( len(server.system_listMethods()) ))
