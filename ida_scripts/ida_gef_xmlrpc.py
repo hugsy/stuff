@@ -135,6 +135,36 @@ class Ida:
         addr = long(address, 16) if ishex(address) else long(address)
         return Jump(addr)
 
+    def GetStructByName(self, name):
+        for (struct_idx, struct_sid, struct_name) in Structs():
+            if struct_name == name:
+                return struct_sid
+        return None
+
+    @expose
+    def ImportStruct(self, struct_name):
+        """ ImportStruct(string name) => dict
+        Import an IDA structure in GDB which can be used with the `pcustom`
+        command.
+        Example: ida ImportStruct struct_1
+        """
+        if self.GetStructByName(struct_name) is None:
+            return {}
+        res = {struct_name: [x for x in StructMembers(self.GetStructByName(struct_name))]}
+        return res
+
+    @expose
+    def ImportStructs(self):
+        """ ImportStructs() => dict
+        Import all structures from the current IDB into GDB, to be used with the `pcustom`
+        command.
+        Example: ida ImportStructs
+        """
+        res = {}
+        for s in Structs():
+            res.update(self.ImportStruct(s[2]))
+        return res
+
 
     # ideas for commands:
     # - rebase program based on gdb runtime value
