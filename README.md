@@ -1,6 +1,5 @@
-stuff
-========
+# misc stuff 
 
-scripts and tools useful for pentest, reversing and exploitation process
 
-`gef` has been moved to its own repository here -> https://github.com/hugsy/gef
+Collection of scripts and tools useful for pentest, reversing and exploitation process that don't deserve their own repo because too crappy or beta++
+
