@@ -9,8 +9,9 @@ from capstone.x86 import *
 __author__    =   "hugsy"
 __version__   =   0.1
 __licence__   =   "WTFPL v.2"
-__file__      =   "kcapsy.py"
+__file__      =   "kcapys.py"
 __desc__      =   """Keep Calm and Patch Your Shit:
+
 Patch all calls to a function with NOPs. Supports only x86-32 and x86-64 but can be extended.
 
 This script is an improved version of another I found somewhere on Internet (can't remember,
@@ -27,6 +28,9 @@ syntax: {3} [options] args
 def get_call_got(elf):
     plt = elf.get_section_by_name(".rela.plt") or elf.get_section_by_name(".rel.plt")
     dynsym = elf.get_section_by_name(".dynsym")
+    if not plt or not dynsym:
+        return None
+
     for reloc in plt.iter_relocations():
         symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
         if symbol.name == callname:
@@ -119,7 +123,7 @@ def overwrite_with_nop(from_file, xref, to_file):
         return
 
     print("[*] creating patched file: '{}' -> '{}'".format(from_file, to_file))
-    shutil.copyfile(from_file, to_file)
+    shutil.copy2(from_file, to_file)
     with open(to_file, "rb+") as fd:
         for x in sorted(xref, key=lambda x: x["offset"]):
             # move to the correct offset
@@ -135,12 +139,12 @@ if __name__ == "__main__":
                                      description = __desc__)
     parser.add_argument("-v", "--verbose", default=False, action="store_true", dest="verbose",
 	                help="increments verbosity")
-    parser.add_argument("binary", nargs="?", default="a.out", help="specify the binary to patch (default: '%(default)s')")
     parser.add_argument("-c", "--call", dest="calls", nargs="*", default=["ptrace", "alarm"],
                         help="Specify the call to patch. Can be repeated (default : %(default)s)")
     parser.add_argument("--to-file", dest="to_file", default=None,
                         help="Patched binary name")
-
+    parser.add_argument("binary", nargs="?", default="a.out",
+                        help="specify the binary to patch (default: '%(default)s')")
     args = parser.parse_args()
 
     if not os.access(args.binary, os.R_OK):
