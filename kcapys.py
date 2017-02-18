@@ -139,7 +139,7 @@ if __name__ == "__main__":
                                      description = __desc__)
     parser.add_argument("-v", "--verbose", default=False, action="store_true", dest="verbose",
 	                help="increments verbosity")
-    parser.add_argument("-c", "--call", dest="calls", nargs="*", default=["ptrace", "alarm"],
+    parser.add_argument("-c", "--call", dest="calls", nargs="+", default=["ptrace", "alarm"],
                         help="Specify the call to patch. Can be repeated (default : %(default)s)")
     parser.add_argument("--to-file", dest="to_file", default=None,
                         help="Patched binary name")
