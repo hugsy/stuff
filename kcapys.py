@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 
+import os
+import sys
+import argparse
+import shutil
+import logging
 
-import os, sys, argparse, shutil
-from elftools.elf.elffile import ELFFile
-from capstone import *
-from capstone.x86 import *
+import elftools.elf.elffile as elffile
+import capstone
+import keystone
+import termcolor
+
 
 __author__    =   "hugsy"
 __version__   =   0.1
@@ -18,14 +24,28 @@ This script is an improved version of another I found somewhere on Internet (can
 sorry for the author).
 
 """
-__usage__     = """
-{3} version {0}, {1}
+__usage__     = """{3} version {0}, {1}
 by {2}
 syntax: {3} [options] args
-""".format(__version__, __licence__, __author__, sys.argv[0])
+""".format(__version__, __licence__, __author__, __file__)
+
+log = logging.getLogger("kcapys")
 
 
-def get_call_got(elf):
+class Config:
+    def __init__(self, *args, **kwargs):
+        self.elf = None
+        self.ks = None
+        self.cs = None
+        self.original_filename = None
+        self.patched_filename = None
+        self.nop = None
+        self.asm = None
+        return
+
+
+def get_call_got(cfg):
+    elf = cfg.elf
     plt = elf.get_section_by_name(".rela.plt") or elf.get_section_by_name(".rel.plt")
     dynsym = elf.get_section_by_name(".dynsym")
     if not plt or not dynsym:
@@ -38,15 +58,13 @@ def get_call_got(elf):
     return None
 
 
-def get_call_instruction_from_arch(from_file):
-    if elf.header.e_machine == "EM_X86_64" or elf.header.e_machine == "EM_386":
-        return "call"
-    return None
-
-
-def get_call_plt(elf, cs, got_value):
+def get_call_plt(cfg, got_value):
+    elf = cfg.elf
+    cs = cfg.cs
     plt = elf.get_section_by_name(".plt")
-    for insn in cs.disasm(plt.data(), plt.header.sh_addr):
+    code = plt.data()
+    length = plt.header.sh_addr
+    for insn in cs.disasm(code, length):
         if insn.mnemonic == "jmp":
             value = None
             for op in insn.operands:
@@ -62,10 +80,14 @@ def get_call_plt(elf, cs, got_value):
     return None
 
 
-def get_xrefs(elf, cs, plt_value):
+def get_xrefs(cfg, plt_value):
+    elf = cfg.elf
+    cs = cfg.cs
     xrefs = []
     text = elf.get_section_by_name(".text")
-    for insn in cs.disasm(text.data(), text.header.sh_addr):
+    code = text.data()
+    length = text.header.sh_addr
+    for insn in cs.disasm(code, length):
         if insn.mnemonic == "call":
             for op in insn.operands:
                 value = None
@@ -74,95 +96,125 @@ def get_xrefs(elf, cs, plt_value):
                 if value == plt_value:
                     offset = insn.address - text.header.sh_addr + text.header.sh_offset
                     xrefs += [ { "offset": offset, "length": insn.size } ]
-                    print("[*] {:#x}: call {:s}@plt  (offset = {:d})".format(insn.address,  callname, offset))
+                    log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address,  callname, offset))
     return xrefs
 
 
-def find_call(path, callname):
-    print("[*] looking for '{}' calls  in {}".format(callname, path))
-    elf = ELFFile(open(path, "rb"))
+def find_call(cfg, callname):
+    elf = cfg.elf
+    cs = cfg.cs
+    path = cfg.original_filename
+    log.info("looking for '{}' calls in '{}'".format(callname, path))
 
-    if elf.header.e_machine == "EM_X86_64":
-        cs = Cs(CS_ARCH_X86, CS_MODE_64)
-    elif elf.header.e_machine == "EM_386":
-        cs = Cs(CS_ARCH_X86, CS_MODE_32)
-    else:
-        # TODO add more architectures
-        raise Exception("More architecture support coming soon")
-
-    cs.detail = True
-
-    call_got = get_call_got(elf)
-    if call_got is None:
-        print("[-] call_got failed")
+    call_got = get_call_got(cfg)
+    if not call_got:
+        log.error("No GOT entry for '{}'".format(callname))
         return []
-    print("[+] {}@got = {:#x}".format(callname, call_got))
 
-    call_plt = get_call_plt(elf, cs, call_got)
-    if call_plt is None:
-        print("[-] call_plt failed")
+    log.debug("{}@got = {:#x}".format(callname, call_got))
+
+    call_plt = get_call_plt(cfg, call_got)
+    if not call_plt:
+        log.error("No PLT entry for '{}'".format(callname))
         return []
-    print("[+] {}@plt = {:#x}".format(callname, call_plt))
 
-    return get_xrefs(elf, cs, call_plt)
-
-
-def get_nop_from_arch(from_file):
-    elf = ELFFile(open(from_file, "rb"))
-    if elf.header.e_machine == "EM_X86_64" or elf.header.e_machine == "EM_386":
-        nop = b"\x90"
-        print("[+] Using x86 NOP: {}".format(repr(nop)))
-        return nop
-    return None
+    log.debug("{}@plt = {:#x}".format(callname, call_plt))
+    return get_xrefs(cfg, call_plt)
 
 
-def overwrite_with_nop(from_file, xref, to_file):
-    nop = get_nop_from_arch(from_file)
-    if nop is None:
-        print("[-] get_nop_from() failed")
-        return
-
-    print("[*] creating patched file: '{}' -> '{}'".format(from_file, to_file))
+def overwrite_xref(cfg, xref):
+    asm = cfg.asm if cfg.asm else cfg.nop
+    from_file = cfg.original_filename
+    to_file = cfg.patched_filename
+    log.info("creating patched file: '{}' -> '{}'".format(from_file, to_file))
     shutil.copy2(from_file, to_file)
     with open(to_file, "rb+") as fd:
         for x in sorted(xref, key=lambda x: x["offset"]):
-            # move to the correct offset
             fd.seek(x["offset"] - fd.tell())
-            # patch `length` with nop sled
-            fd.write(nop * x["length"])
-    print("[+] done")
+            l = x["length"]
+            if cfg.asm and len(cfg.asm) <= l:
+                fd.write(cfg.asm.ljust(cfg.nop, l))
+            else:
+                fd.write(cfg.nop * l)
+            log.info("Successfully patched to file '{}'".format(to_file))
     return
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(usage = __usage__,
-                                     description = __desc__)
+    parser = argparse.ArgumentParser(usage = __usage__, description = __desc__)
     parser.add_argument("-v", "--verbose", default=False, action="store_true", dest="verbose",
 	                help="increments verbosity")
+    parser.add_argument("--debug", default=False, action="store_true", dest="debug",
+	                help="enable debugging messages")
     parser.add_argument("-c", "--call", dest="calls", nargs="+", default=["ptrace", "alarm"],
                         help="Specify the call to patch. Can be repeated (default : %(default)s)")
     parser.add_argument("--to-file", dest="to_file", default=None,
                         help="Patched binary name")
+    parser.add_argument("--asm", dest="asm", type=str, default=None,
+                        help="Write ASSEMBLY instead of NOP")
     parser.add_argument("binary", nargs="?", default="a.out",
                         help="specify the binary to patch (default: '%(default)s')")
     args = parser.parse_args()
 
+    fmt = "%(asctime)-15s {0} - %(message)s".format(termcolor.colored("%(levelname)s",attrs=["bold"]))
+    logging.basicConfig(format=fmt)
+
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+        log.debug("Debug mode enabled")
+    else:
+        log.setLevel(logging.INFO)
+
     if not os.access(args.binary, os.R_OK):
-        print("[-] Cannot read {}".format(args.binary))
+        log.critical("Cannot read {}".format(args.binary))
         sys.exit(1)
 
     from_file = args.binary
     to_file = "{}.patched".format(from_file) if args.to_file is None else args.to_file
 
     if os.access(to_file, os.R_OK):
-        print("[!] {} already exists, it will be overwritten...".format(to_file))
+        log.warning("'{}' already exists, it will be overwritten...".format(to_file))
+
+    cfg = Config()
+    cfg.original_filename = from_file
+    cfg.patched_filename = to_file
+    cfg.elf = elffile.ELFFile(open(cfg.original_filename, "rb"))
+
+    if cfg.elf.header.e_machine == "EM_X86_64":
+        from capstone.x86 import *
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        cfg.cs.detail = True
+
+        arch, mode, endian = keystone.KS_ARCH_X86, keystone.KS_MODE_64, keystone.KS_MODE_LITTLE_ENDIAN
+        cfg.ks = keystone.Ks(arch, mode | endian)
+
+        cfg.nop = b"\x90" # nop
+
+    elif cfg.elf.header.e_machine == "EM_386":
+        from capstone.x86 import *
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        cfg.cs.detail = True
+
+        arch, mode, endian = keystone.KS_ARCH_X86, keystone.KS_MODE_64, keystone.KS_MODE_LITTLE_ENDIAN
+        cfg.ks = keystone.Ks(arch, mode | endian)
+
+        cfg.nop = b"\x90" # nop
+
+    else:
+        raise NotImplementedError("TODO add more architectures")
+
+
+    if args.asm:
+        asm, cnt = cfg.ks.asm(args.asm)
+        if cnt>0:
+            cfg.asm = asm
 
     for callname in args.calls:
-        xref = find_call(from_file, callname)
+        xref = find_call(cfg, callname)
         if xref:
-            print("[+] Found {} calls to '{}' in '{}', patching...".format(len(xref), callname, from_file))
-            overwrite_with_nop(from_file, xref, to_file)
+            log.info("Found {} call(s) to '{}' in '{}', patching...".format(len(xref), callname, from_file))
+            overwrite_xref(cfg, xref)
         else:
-            print("[-] Something went wrong, not patching '{}' in '{}'".format(callname, from_file))
+            log.warning("Something went wrong, not patching '{}' in '{}'".format(callname, from_file))
 
     sys.exit(0)
