@@ -176,7 +176,7 @@ if __name__ == "__main__":
         log.setLevel(logging.INFO)
 
     if not os.access(args.binary, os.R_OK):
-        log.critical("Cannot read {}".format(args.binary))
+        log.critical("Cannot read '{}'".format(args.binary))
         sys.exit(1)
 
     from_file = args.binary
