@@ -136,11 +136,15 @@ def overwrite_xref(cfg, xref):
         for x in sorted(xref, key=lambda x: x["offset"]):
             fd.seek(x["offset"] - fd.tell())
             l = x["length"]
-            if cfg.asm and len(cfg.asm) <= l:
-                fd.write(cfg.asm.ljust(cfg.nop, l))
-            else:
-                fd.write(cfg.nop * l)
-            log.info("Successfully patched to file '{}'".format(to_file))
+            if cfg.asm:
+                if len(cfg.asm) <= l:
+                    fd.write(cfg.asm + cfg.nop*(l-len(cfg.asm)))
+                    continue
+
+                log.warning("Instruction too large (room_size={}, insn_len={}), using nop".format(l, len(cfg.asm)))
+            fd.write(cfg.nop * l)
+
+        log.info("Successfully patched to file '{}'".format(to_file))
     return
 
 
@@ -154,7 +158,7 @@ if __name__ == "__main__":
                         help="Specify the call to patch. Can be repeated (default : %(default)s)")
     parser.add_argument("--to-file", dest="to_file", default=None,
                         help="Patched binary name")
-    parser.add_argument("--asm", dest="asm", type=str, default=None,
+    parser.add_argument("-a", "--assembly", dest="asm", type=str, default=None,
                         help="Write ASSEMBLY instead of NOP")
     parser.add_argument("-L", "--list", dest="list_plt_entries", action="store_true", default=False,
                         help="Dumps the patchable locations from binary")
@@ -188,31 +192,21 @@ if __name__ == "__main__":
 
     if cfg.elf.header.e_machine == "EM_X86_64":
         from capstone.x86 import *
-        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
-
-        arch, mode, endian = keystone.KS_ARCH_X86, keystone.KS_MODE_64, keystone.KS_MODE_LITTLE_ENDIAN
-        cfg.ks = keystone.Ks(arch, mode | endian)
-
+        cfg.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_64|keystone.KS_MODE_LITTLE_ENDIAN)
         cfg.nop = b"\x90" # nop
 
     elif cfg.elf.header.e_machine == "EM_386":
         from capstone.x86 import *
-        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
-
-        arch, mode, endian = keystone.KS_ARCH_X86, keystone.KS_MODE_64, keystone.KS_MODE_LITTLE_ENDIAN
-        cfg.ks = keystone.Ks(arch, mode | endian)
-
+        cfg.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32|keystone.KS_MODE_LITTLE_ENDIAN)
         cfg.nop = b"\x90" # nop
 
     else:
         raise NotImplementedError("TODO add more architectures")
 
-    if args.asm:
-        asm, cnt = cfg.ks.asm(args.asm)
-        if cnt>0:
-            cfg.asm = asm
 
     if args.list_plt_entries:
         log.info("Dumping PLT entries:")
@@ -220,6 +214,17 @@ if __name__ == "__main__":
             sym = cfg.elf.get_section_by_name(".dynsym").get_symbol(reloc.entry.r_info_sym)
             log.info("{}()".format(sym.name))
         sys.exit(0)
+
+
+    if args.asm:
+        asm, cnt = cfg.ks.asm(args.asm)
+        if cnt>0:
+            cfg.asm = bytes(asm)
+            log.info("Matching calls will be overwritten with '{}'".format(args.asm))
+            log.debug("{} instruction(s) compiled".format(cnt))
+    else:
+        log.info("Matching calls will be overwritten with NOPs")
+
 
     for callname in args.calls:
         xref = find_call(cfg, callname)
