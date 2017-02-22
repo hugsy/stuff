@@ -44,17 +44,22 @@ class Config:
         return
 
 
-def get_call_got(cfg):
+def get_relocs(cfg):
     elf = cfg.elf
     plt = elf.get_section_by_name(".rela.plt") or elf.get_section_by_name(".rel.plt")
-    dynsym = elf.get_section_by_name(".dynsym")
-    if not plt or not dynsym:
+    return plt.iter_relocations()
+
+
+def get_call_got(cfg):
+    dynsym = cfg.elf.get_section_by_name(".dynsym")
+    if not dynsym:
         return None
 
-    for reloc in plt.iter_relocations():
+    for reloc in get_relocs(cfg):
         symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
         if symbol.name == callname:
             return reloc.entry.r_offset
+
     return None
 
 
@@ -69,10 +74,10 @@ def get_call_plt(cfg, got_value):
             value = None
             for op in insn.operands:
                 if op.type == X86_OP_MEM:
-                    if insn.reg_name(op.mem.base) == "rip" and op.mem.index == 0:
+                    if   insn.reg_name(op.mem.base)=="rip" and op.mem.index==0:
                         # x64
                         value = insn.address + insn.size + op.mem.disp
-                    elif op.mem.base == 0 and op.mem.index == 0:
+                    elif op.mem.base==0 and op.mem.index==0:
                         # x32
                         value = op.mem.disp
             if value == got_value:
@@ -96,7 +101,7 @@ def get_xrefs(cfg, plt_value):
                 if value == plt_value:
                     offset = insn.address - text.header.sh_addr + text.header.sh_offset
                     xrefs += [ { "offset": offset, "length": insn.size } ]
-                    log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address,  callname, offset))
+                    log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address, callname, offset))
     return xrefs
 
 
@@ -123,7 +128,6 @@ def find_call(cfg, callname):
 
 
 def overwrite_xref(cfg, xref):
-    asm = cfg.asm if cfg.asm else cfg.nop
     from_file = cfg.original_filename
     to_file = cfg.patched_filename
     log.info("creating patched file: '{}' -> '{}'".format(from_file, to_file))
@@ -152,6 +156,8 @@ if __name__ == "__main__":
                         help="Patched binary name")
     parser.add_argument("--asm", dest="asm", type=str, default=None,
                         help="Write ASSEMBLY instead of NOP")
+    parser.add_argument("-L", "--list", dest="list_plt_entries", action="store_true", default=False,
+                        help="Dumps the patchable locations from binary")
     parser.add_argument("binary", nargs="?", default="a.out",
                         help="specify the binary to patch (default: '%(default)s')")
     args = parser.parse_args()
@@ -203,11 +209,17 @@ if __name__ == "__main__":
     else:
         raise NotImplementedError("TODO add more architectures")
 
-
     if args.asm:
         asm, cnt = cfg.ks.asm(args.asm)
         if cnt>0:
             cfg.asm = asm
+
+    if args.list_plt_entries:
+        log.info("Dumping PLT entries:")
+        for reloc in get_relocs(cfg):
+            sym = cfg.elf.get_section_by_name(".dynsym").get_symbol(reloc.entry.r_info_sym)
+            log.info("{}()".format(sym.name))
+        sys.exit(0)
 
     for callname in args.calls:
         xref = find_call(cfg, callname)
