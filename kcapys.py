@@ -5,6 +5,7 @@ import sys
 import argparse
 import shutil
 import logging
+import abc
 
 import elftools.elf.elffile as elffile
 import capstone
@@ -41,90 +42,179 @@ class Config:
         self.patched_filename = None
         self.nop = None
         self.asm = None
+        self.arch = None
         return
 
 
-def get_relocs(cfg):
-    elf = cfg.elf
-    plt = elf.get_section_by_name(".rela.plt") or elf.get_section_by_name(".rel.plt")
-    return plt.iter_relocations()
+class Arch(metaclass=abc.ABCMeta):
+    def __init__(self, *args, **kwargs):
+        return
+
+    def get_relocs(self, cfg):
+        plt = cfg.elf.get_section_by_name(".rela.plt") or cfg.elf.get_section_by_name(".rel.plt")
+        return plt.iter_relocations()
+
+    @abc.abstractmethod
+    def get_call_got(self, cfg): pass
+
+    @abc.abstractmethod
+    def get_call_plt(cfg, got_value): pass
+
+    @abc.abstractmethod
+    def get_xrefs(self, cfg, plt_value): pass
 
 
-def get_call_got(cfg):
-    dynsym = cfg.elf.get_section_by_name(".dynsym")
-    if not dynsym:
+class X86(Arch):
+    def get_call_got(self, cfg):
+        dynsym = cfg.elf.get_section_by_name(".dynsym")
+        if not dynsym:
+            return None
+        for reloc in self.get_relocs(cfg):
+            symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
+            if symbol.name == callname:
+                return reloc.entry.r_offset
         return None
 
-    for reloc in get_relocs(cfg):
-        symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
-        if symbol.name == callname:
-            return reloc.entry.r_offset
-
-    return None
-
-
-def get_call_plt(cfg, got_value):
-    elf = cfg.elf
-    cs = cfg.cs
-    plt = elf.get_section_by_name(".plt")
-    code = plt.data()
-    length = plt.header.sh_addr
-    for insn in cs.disasm(code, length):
-        if insn.mnemonic == "jmp":
-            value = None
-            for op in insn.operands:
-                if op.type == X86_OP_MEM:
-                    if   insn.reg_name(op.mem.base)=="rip" and op.mem.index==0:
-                        # x64
-                        value = insn.address + insn.size + op.mem.disp
-                    elif op.mem.base==0 and op.mem.index==0:
-                        # x32
-                        value = op.mem.disp
-            if value == got_value:
-                return insn.address
-    return None
-
-
-def get_xrefs(cfg, plt_value):
-    elf = cfg.elf
-    cs = cfg.cs
-    xrefs = []
-    text = elf.get_section_by_name(".text")
-    code = text.data()
-    length = text.header.sh_addr
-    for insn in cs.disasm(code, length):
-        if insn.mnemonic == "call":
-            for op in insn.operands:
+    def get_call_plt(self, cfg, got_value):
+        elf     = cfg.elf
+        cs      = cfg.cs
+        plt     = elf.get_section_by_name(".plt")
+        code    = plt.data()
+        length  = plt.header.sh_addr
+        for insn in cs.disasm(code, length):
+            if insn.mnemonic == "jmp":
                 value = None
-                if op.type == X86_OP_IMM:
-                    value = op.imm
-                if value == plt_value:
-                    offset = insn.address - text.header.sh_addr + text.header.sh_offset
-                    xrefs += [ { "offset": offset, "length": insn.size } ]
-                    log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address, callname, offset))
-    return xrefs
+                for op in insn.operands:
+                    if op.type==X86_OP_MEM and op.mem.base==0 and op.mem.index==0:
+                        value = op.mem.disp
+                if value == got_value:
+                    return insn.address
+        return None
+
+    def get_xrefs(self, cfg, plt_value):
+        elf = cfg.elf
+        cs = cfg.cs
+        xrefs = []
+        text = elf.get_section_by_name(".text")
+        code = text.data()
+        length = text.header.sh_addr
+        for insn in cs.disasm(code, length):
+            if insn.mnemonic == "call":
+                for op in insn.operands:
+                    value = None
+                    if op.type == X86_OP_IMM:
+                        value = op.imm
+                    if value == plt_value:
+                        offset = insn.address - text.header.sh_addr + text.header.sh_offset
+                        xrefs += [ { "offset": offset, "length": insn.size } ]
+                        log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address, callname, offset))
+        return xrefs
+
+
+class X64(X86):
+    def get_call_plt(self, cfg, got_value):
+        elf     = cfg.elf
+        cs      = cfg.cs
+        plt     = elf.get_section_by_name(".plt")
+        code    = plt.data()
+        addr    = plt.header.sh_addr
+        for insn in cs.disasm(code, addr):
+            if insn.mnemonic == "jmp":
+                value = None
+                for op in insn.operands:
+                    if op.type==X86_OP_MEM and insn.reg_name(op.mem.base)=="rip" and op.mem.index==0:
+                        value = insn.address + insn.size + op.mem.disp
+                if value == got_value:
+                    return insn.address
+        return None
+
+
+class ARM(Arch):
+    def get_call_got(self, cfg):
+        dynsym = cfg.elf.get_section_by_name(".dynsym")
+        if not dynsym:
+            return None
+        for reloc in self.get_relocs(cfg):
+            symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
+            if symbol.name == callname:
+                return reloc.entry.r_offset
+        return None
+
+    def get_call_plt(self, cfg, got_value):
+        elf     = cfg.elf
+        cs      = cfg.cs
+        plt     = elf.get_section_by_name(".plt")
+        code    = plt.data()
+        addr    = plt.header.sh_addr
+        sz      = plt.header.sh_entsize
+        got_off = 0
+
+        for insn in cs.disasm(code, addr):
+            if insn.mnemonic == "add":
+                select = False
+                for op in insn.operands:
+                    if op.type==ARM_OP_REG and insn.reg_name(op.reg)=="ip": select=True
+                    if op.type==ARM_OP_IMM and select: got_off = op.imm
+                continue
+
+            if insn.mnemonic == "ldr" and got_off > 0:
+                value = None
+                for op in insn.operands:
+                    if op.type==ARM_OP_MEM and insn.reg_name(op.mem.base)=="ip" and op.mem.index==0:
+                        value = got_off + insn.address + op.mem.disp
+                if value == got_value:
+                    return insn.address - 2*sz
+        return None
+
+    def get_xrefs(self, cfg, plt_value):
+        elf = cfg.elf
+        cs = cfg.cs
+        xrefs = []
+        text = elf.get_section_by_name(".text")
+        code = text.data()
+        length = text.header.sh_addr
+        for insn in cs.disasm(code, length):
+            if insn.mnemonic == "bl":
+                for op in insn.operands:
+                    value = None
+                    if op.type == ARM_OP_IMM:
+                        value = op.imm
+                    if value == plt_value:
+                        offset = insn.address - text.header.sh_addr + text.header.sh_offset
+                        xrefs += [ { "offset": offset, "length": insn.size } ]
+                        log.info("{:#x}: bl {:s}@plt (offset = {:d})".format(insn.address, callname, offset))
+        return xrefs
+
+
+class AARCH64(ARM):
+    pass
+
+
+class MIPS(Arch):
+    pass
 
 
 def find_call(cfg, callname):
     elf = cfg.elf
     cs = cfg.cs
+    arch = cfg.arch
     path = cfg.original_filename
     log.info("looking for '{}' calls in '{}'".format(callname, path))
 
-    call_got = get_call_got(cfg)
+    call_got = arch.get_call_got(cfg)
     if not call_got:
         log.error("No GOT entry for '{}'".format(callname))
         return []
 
     log.debug("{}@got = {:#x}".format(callname, call_got))
 
-    call_plt = get_call_plt(cfg, call_got)
+    call_plt = arch.get_call_plt(cfg, call_got)
     if not call_plt:
         log.error("No PLT entry for '{}'".format(callname))
         return []
 
     log.debug("{}@plt = {:#x}".format(callname, call_plt))
-    return get_xrefs(cfg, call_plt)
+    return arch.get_xrefs(cfg, call_plt)
 
 
 def overwrite_xref(cfg, xref):
@@ -142,7 +232,7 @@ def overwrite_xref(cfg, xref):
                     continue
 
                 log.warning("Instruction too large (room_size={}, insn_len={}), using nop".format(l, len(cfg.asm)))
-            fd.write(cfg.nop * l)
+            fd.write(cfg.nop.ljust(l))
 
         log.info("Successfully patched to file '{}'".format(to_file))
     return
@@ -191,6 +281,8 @@ if __name__ == "__main__":
     cfg.elf = elffile.ELFFile(open(cfg.original_filename, "rb"))
 
     if cfg.elf.header.e_machine == "EM_X86_64":
+        cfg.arch = X64()
+
         from capstone.x86 import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
@@ -198,19 +290,38 @@ if __name__ == "__main__":
         cfg.nop = b"\x90" # nop
 
     elif cfg.elf.header.e_machine == "EM_386":
+        cfg.arch = X86()
+
         from capstone.x86 import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
         cfg.ks = keystone.Ks(keystone.KS_ARCH_X86, keystone.KS_MODE_32|keystone.KS_MODE_LITTLE_ENDIAN)
         cfg.nop = b"\x90" # nop
 
+    elif cfg.elf.header.e_machine == "EM_ARM":
+        cfg.arch = ARM()
+
+        from capstone.arm import *
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM|capstone.CS_MODE_LITTLE_ENDIAN)
+        cfg.cs.detail = True
+        cfg.ks = keystone.Ks(keystone.KS_ARCH_ARM, keystone.KS_MODE_ARM|keystone.KS_MODE_LITTLE_ENDIAN)
+        cfg.nop = b"\x00\x00\xa0\xe1" # mov r0, r0
+
+
+    # elif cfg.elf.header.e_machine == "EM_AARCH64":
+    #     cfg.arch = AARCH64()
+
+
+    # elif cfg.elf.header.e_machine == "EM_MIPS":
+    #     cfg.arch = ARM()
+
     else:
-        raise NotImplementedError("TODO add more architectures")
+        raise NotImplementedError("Architecture '{}' not supported yet".format(cfg.elf.header.e_machine))
 
 
     if args.list_plt_entries:
         log.info("Dumping PLT entries:")
-        for reloc in get_relocs(cfg):
+        for reloc in cfg.arch.get_relocs(cfg):
             sym = cfg.elf.get_section_by_name(".dynsym").get_symbol(reloc.entry.r_info_sym)
             log.info("{}()".format(sym.name))
         sys.exit(0)
