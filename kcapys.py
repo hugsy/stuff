@@ -232,7 +232,10 @@ def overwrite_xref(cfg, xref):
                     continue
 
                 log.warning("Instruction too large (room_size={}, insn_len={}), using nop".format(l, len(cfg.asm)))
-            fd.write(cfg.nop.ljust(l))
+            if cfg.arch is X86 or cfg.arch is X64:
+                fd.write(cfg.nop*l)
+            else:
+                fd.write(cfg.nop)
 
         log.info("Successfully patched to file '{}'".format(to_file))
     return
