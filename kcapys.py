@@ -54,17 +54,6 @@ class Arch(metaclass=abc.ABCMeta):
         plt = cfg.elf.get_section_by_name(".rela.plt") or cfg.elf.get_section_by_name(".rel.plt")
         return plt.iter_relocations()
 
-    @abc.abstractmethod
-    def get_call_got(self, cfg): pass
-
-    @abc.abstractmethod
-    def get_call_plt(cfg, got_value): pass
-
-    @abc.abstractmethod
-    def get_xrefs(self, cfg, plt_value): pass
-
-
-class X86(Arch):
     def get_call_got(self, cfg):
         dynsym = cfg.elf.get_section_by_name(".dynsym")
         if not dynsym:
@@ -75,6 +64,14 @@ class X86(Arch):
                 return reloc.entry.r_offset
         return None
 
+    @abc.abstractmethod
+    def get_call_plt(cfg, got_value): pass
+
+    @abc.abstractmethod
+    def get_xrefs(self, cfg, plt_value): pass
+
+
+class X86(Arch):
     def get_call_plt(self, cfg, got_value):
         elf     = cfg.elf
         cs      = cfg.cs
@@ -130,31 +127,18 @@ class X64(X86):
 
 
 class ARM(Arch):
-    def get_call_got(self, cfg):
-        dynsym = cfg.elf.get_section_by_name(".dynsym")
-        if not dynsym:
-            return None
-        for reloc in self.get_relocs(cfg):
-            symbol = dynsym.get_symbol(reloc.entry.r_info_sym)
-            if symbol.name == callname:
-                return reloc.entry.r_offset
-        return None
-
     def get_call_plt(self, cfg, got_value):
-        elf     = cfg.elf
-        cs      = cfg.cs
-        plt     = elf.get_section_by_name(".plt")
-        code    = plt.data()
-        addr    = plt.header.sh_addr
-        sz      = plt.header.sh_entsize
+        plt     = cfg.elf.get_section_by_name(".plt")
         got_off = 0
 
-        for insn in cs.disasm(code, addr):
+        for insn in cfg.cs.disasm(plt.data(), plt.header.sh_addr):
             if insn.mnemonic == "add":
                 select = False
                 for op in insn.operands:
                     if op.type==ARM_OP_REG and insn.reg_name(op.reg)=="ip": select=True
-                    if op.type==ARM_OP_IMM and select: got_off = op.imm
+                    if op.type==ARM_OP_IMM and select:
+                        got_off = op.imm
+                        log.debug("got offset={:#x}".format(got_off))
                 continue
 
             if insn.mnemonic == "ldr" and got_off > 0:
@@ -163,17 +147,14 @@ class ARM(Arch):
                     if op.type==ARM_OP_MEM and insn.reg_name(op.mem.base)=="ip" and op.mem.index==0:
                         value = got_off + insn.address + op.mem.disp
                 if value == got_value:
-                    return insn.address - 2*sz
+                    return insn.address - 8
         return None
 
     def get_xrefs(self, cfg, plt_value):
-        elf = cfg.elf
-        cs = cfg.cs
         xrefs = []
-        text = elf.get_section_by_name(".text")
-        code = text.data()
-        length = text.header.sh_addr
-        for insn in cs.disasm(code, length):
+        text = cfg.elf.get_section_by_name(".text")
+
+        for insn in cfg.cs.disasm(text.data(), text.header.sh_addr):
             if insn.mnemonic == "bl":
                 for op in insn.operands:
                     value = None
@@ -187,7 +168,40 @@ class ARM(Arch):
 
 
 class AARCH64(ARM):
-    pass
+    def get_call_plt(self, cfg, got_value):
+        plt     = cfg.elf.get_section_by_name(".plt")
+        got_base= cfg.elf.get_section_by_name(".got.plt").header.sh_addr + 0x18
+        log.debug(".got.plt base={:#x}".format(got_base))
+
+        for insn in cfg.cs.disasm(plt.data(), plt.header.sh_addr):
+            if insn.mnemonic == "ldr":
+                value = None
+                for op in insn.operands:
+                    if op.type==ARM64_OP_MEM and insn.reg_name(op.mem.base)=="x16" and op.mem.index==0:
+                        value = got_base + op.mem.disp
+
+                if value == got_value:
+                    return insn.address-4
+        return None
+
+    def get_xrefs(self, cfg, plt_value):
+        xrefs = []
+        text = cfg.elf.get_section_by_name(".text")
+
+        for insn in cfg.cs.disasm(text.data(), text.header.sh_addr):
+            if insn.mnemonic == "bl":
+                for op in insn.operands:
+                    value = None
+                    if op.type == ARM64_OP_IMM:
+                        value = op.imm
+                        print("{:#x} bl {:#x}".format(insn.address, value))
+                    if value == plt_value:
+                        offset = insn.address - text.header.sh_addr + text.header.sh_offset
+                        xrefs += [ { "offset": offset, "length": insn.size } ]
+                        log.info("{:#x}: bl {:s}@plt (offset = {:d})".format(insn.address, callname, offset))
+
+        return xrefs
+
 
 
 class MIPS(Arch):
@@ -311,12 +325,18 @@ if __name__ == "__main__":
         cfg.nop = b"\x00\x00\xa0\xe1" # mov r0, r0
 
 
-    # elif cfg.elf.header.e_machine == "EM_AARCH64":
-    #     cfg.arch = AARCH64()
+    elif cfg.elf.header.e_machine == "EM_AARCH64":
+        cfg.arch = AARCH64()
+
+        from capstone.arm64 import *
+        cfg.cs = capstone.Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_ARM|capstone.CS_MODE_LITTLE_ENDIAN)
+        cfg.cs.detail = True
+        cfg.ks = keystone.Ks(keystone.KS_ARCH_ARM64, keystone.KS_MODE_LITTLE_ENDIAN)
+        cfg.nop = b"\xe0\x03\x00\xaa" # mov x0, x0
 
 
     # elif cfg.elf.header.e_machine == "EM_MIPS":
-    #     cfg.arch = ARM()
+    #     cfg.arch = MIPS()
 
     else:
         raise NotImplementedError("Architecture '{}' not supported yet".format(cfg.elf.header.e_machine))
