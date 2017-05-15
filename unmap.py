@@ -775,7 +775,7 @@ class UNmap :
                             ip = address.attrib["addr"]
                         elif address.attrib["addrtype"] == "mac" :
                             mac = address.attrib["addr"]
-                            vendor = address.attrib["vendor"]
+                            vendor = address.get("vendor", "")
 
                 host = self.get_or_create_host_by_ip(ip)
                 if host.mac is None and mac is not None:
