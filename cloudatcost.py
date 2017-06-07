@@ -90,7 +90,9 @@ def console(server_id):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
-    print(req.text)
+    if len(req.text)==0:
+        print("[-] Invalid server response")
+        return
 
     res = req.json()
     if res["status"] != "ok":
