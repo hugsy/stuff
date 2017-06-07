@@ -48,9 +48,9 @@ def list_tasks(server_id=None):
     if res["status"] == "ok":
         for server in res["data"]:
             if server_id is None:
-                print("[+] Name: {}, id: {}: {} - {}".format(server["label"], server["id"]), server["action"], server["status"], )
+                print("[+] Name: {}, id: {}: {} - {}".format(server["label"], server["serverid"]), server["action"], server["status"], )
                 continue
-            if server["id"]!=str(server_id):
+            if server["serverid"]!=str(server_id):
                 continue
 
             print(json.dumps(server, sort_keys=True, indent=4))
@@ -60,8 +60,9 @@ def list_tasks(server_id=None):
 
 def power_operations(server_id, action="reset"):
     """Activate server power operations."""
-    if action not in ("poweron", "poweroff", "reset"):
-        print("[-] Incorrect action")
+    valid_actions = ("poweron", "poweroff", "reset"):
+    if action not in valid_actions:
+        print("[-] Incorrect action, must be in %s" % valid_actions)
         return
 
     url = "{}/powerop.php".format(target)
