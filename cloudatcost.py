@@ -60,7 +60,7 @@ def list_tasks(server_id=None):
 
 def power_operations(server_id, action="reset"):
     """Activate server power operations."""
-    valid_actions = ("poweron", "poweroff", "reset"):
+    valid_actions = ("poweron", "poweroff", "reset")
     if action not in valid_actions:
         print("[-] Incorrect action, must be in %s" % valid_actions)
         return
