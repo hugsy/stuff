@@ -19,10 +19,7 @@ __licence__   =   "WTFPL v.2"
 __file__      =   "kcapys.py"
 __desc__      =   """Keep Calm and Patch Your Shit:
 
-Patch all calls to a function with NOPs. Supports only x86-32 and x86-64 but can be extended.
-
-This script is an improved version of another I found somewhere on Internet (can't remember,
-sorry for the author).
+Mass PLT patching: replace calls in binaries with NOPs.
 
 """
 __usage__     = """{3} version {0}, {1}
@@ -104,7 +101,7 @@ class X86(Arch):
                     if value == plt_value:
                         offset = insn.address - text.header.sh_addr + text.header.sh_offset
                         xrefs += [ { "offset": offset, "length": insn.size } ]
-                        log.info("{:#x}: call {:s}@plt  (offset = {:d})".format(insn.address, callname, offset))
+                        log.info("{:#x}: call {:s}@plt  (offset={:d}, length={:d})".format(insn.address, callname, offset, insn.size))
         return xrefs
 
 
@@ -238,7 +235,7 @@ def overwrite_xref(cfg, xref):
     shutil.copy2(from_file, to_file)
     with open(to_file, "rb+") as fd:
         for x in sorted(xref, key=lambda x: x["offset"]):
-            fd.seek(x["offset"] - fd.tell())
+            fd.seek(x["offset"])
             l = x["length"]
             if cfg.asm:
                 if len(cfg.asm) <= l:
@@ -246,7 +243,8 @@ def overwrite_xref(cfg, xref):
                     continue
 
                 log.warning("Instruction too large (room_size={}, insn_len={}), using nop".format(l, len(cfg.asm)))
-            if cfg.arch is X86 or cfg.arch is X64:
+
+            if cfg.arch.__class__.__name__ in ("X86", "X64"):
                 fd.write(cfg.nop*l)
             else:
                 fd.write(cfg.nop)
@@ -299,7 +297,7 @@ if __name__ == "__main__":
 
     if cfg.elf.header.e_machine == "EM_X86_64":
         cfg.arch = X64()
-
+        log.info("Architecture -> x86-64")
         from capstone.x86 import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
@@ -308,7 +306,7 @@ if __name__ == "__main__":
 
     elif cfg.elf.header.e_machine == "EM_386":
         cfg.arch = X86()
-
+        log.info("Architecture -> x86-32")
         from capstone.x86 import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
@@ -317,7 +315,7 @@ if __name__ == "__main__":
 
     elif cfg.elf.header.e_machine == "EM_ARM":
         cfg.arch = ARM()
-
+        log.info("Architecture -> ARM")
         from capstone.arm import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
@@ -327,14 +325,14 @@ if __name__ == "__main__":
 
     elif cfg.elf.header.e_machine == "EM_AARCH64":
         cfg.arch = AARCH64()
-
+        log.info("Architecture -> AARCH64")
         from capstone.arm64 import *
         cfg.cs = capstone.Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_ARM|capstone.CS_MODE_LITTLE_ENDIAN)
         cfg.cs.detail = True
         cfg.ks = keystone.Ks(keystone.KS_ARCH_ARM64, keystone.KS_MODE_LITTLE_ENDIAN)
         cfg.nop = b"\xe0\x03\x00\xaa" # mov x0, x0
 
-
+    # TODO:
     # elif cfg.elf.header.e_machine == "EM_MIPS":
     #     cfg.arch = MIPS()
 
@@ -343,7 +341,7 @@ if __name__ == "__main__":
 
 
     if args.list_plt_entries:
-        log.info("Dumping PLT entries:")
+        log.info("Dumping overwritable PLT entries:")
         for reloc in cfg.arch.get_relocs(cfg):
             sym = cfg.elf.get_section_by_name(".dynsym").get_symbol(reloc.entry.r_info_sym)
             log.info("{}()".format(sym.name))
