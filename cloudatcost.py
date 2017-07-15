@@ -57,7 +57,6 @@ def list_tasks(server_id=None):
     return
 
 
-
 def power_operations(server_id, action="reset"):
     """Activate server power operations."""
     valid_actions = ("poweron", "poweroff", "reset")
@@ -70,6 +69,7 @@ def power_operations(server_id, action="reset"):
     req = requests.post(url, data=params)
     if req.status_code != requests.codes.ok:
         print("[-] Got %d: %s" % (req.status_code, req.reason))
+        print(req.text)
         return
 
     res = req.json()
@@ -79,6 +79,11 @@ def power_operations(server_id, action="reset"):
 
     print("[+] Success: {:s} - {:s}".format(res["action"], res["result"]))
     return
+
+
+def poweron(server_id): return power_operations(server_id, action="poweron")
+def poweroff(server_id): return power_operations(server_id, action="poweroff")
+def reset(server_id): return power_operations(server_id, action="reset")
 
 
 def console(server_id):
