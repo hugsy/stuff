@@ -18,6 +18,10 @@ def list_servers(server_id=None):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
+        return
+
     res = req.json()
     print("[+] Status: {:s}".format(res["status"]))
 
@@ -40,6 +44,10 @@ def list_tasks(server_id=None):
     req = requests.get(url, params=params)
     if req.status_code != requests.codes.ok:
         print("[-] Got %d: %s" % (req.status_code, req.reason))
+        return
+
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
         return
 
     res = req.json()
@@ -72,6 +80,10 @@ def power_operations(server_id, action="reset"):
         print(req.text)
         return
 
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
+        return
+
     res = req.json()
     if res["status"] != "ok":
         print("[-] {:s}".format(res["error_description"]))
@@ -95,8 +107,8 @@ def console(server_id):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
-    if len(req.text)==0:
-        print("[-] Invalid server response")
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
         return
 
     res = req.json()
