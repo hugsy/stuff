@@ -455,7 +455,7 @@ if __name__ == "__main__":
     elif args.exe:
         cmd = "i686-w64-mingw32-gcc {} {} -o {}".format(cname, res_o, ename)
     else:
-        cmd = "i686-w64-mingw32-gcc -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(args.bin, cname, res_o, ename)
+        cmd = "i686-w64-mingw32-gcc -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(cname, res_o, ename)
 
     if not args.quiet:
         print("[+] Compiling '{}'->'{}'".format(cname, ename))
