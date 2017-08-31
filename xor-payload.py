@@ -370,8 +370,6 @@ if __name__ == "__main__":
     parser.add_argument("--dll", default=False, action="store_true", help="Generate a DLL")
     parser.add_argument("--exe", default=False, action="store_true", help="Generate a PE Console")
     parser.add_argument("--win32", default=True, action="store_true", help="Generate a PE GUI (default)")
-
-    parser.add_argument("--gcc-path", default=HOME + "/.wine/drive_c/MinGW/bin", dest="bin", help="Specify path to MinGW GCC binary directory")
     parser.add_argument("--icons-path", default="./icons/", dest="ico", help="Specify path to icons/ directory")
     parser.add_argument("--no-compile", default=False, dest="no_compile", action="store_true", help="If set, only the C file will be generated.")
 
