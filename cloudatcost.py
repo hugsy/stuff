@@ -18,6 +18,10 @@ def list_servers(server_id=None):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
+        return
+
     res = req.json()
     print("[+] Status: {:s}".format(res["status"]))
 
@@ -42,6 +46,10 @@ def list_tasks(server_id=None):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
+        return
+
     res = req.json()
     print("[+] Status: {:s}".format(res["status"]))
 
@@ -57,10 +65,9 @@ def list_tasks(server_id=None):
     return
 
 
-
 def power_operations(server_id, action="reset"):
     """Activate server power operations."""
-    valid_actions = ("poweron", "poweroff", "reset"):
+    valid_actions = ("poweron", "poweroff", "reset")
     if action not in valid_actions:
         print("[-] Incorrect action, must be in %s" % valid_actions)
         return
@@ -70,6 +77,11 @@ def power_operations(server_id, action="reset"):
     req = requests.post(url, data=params)
     if req.status_code != requests.codes.ok:
         print("[-] Got %d: %s" % (req.status_code, req.reason))
+        print(req.text)
+        return
+
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
         return
 
     res = req.json()
@@ -81,6 +93,11 @@ def power_operations(server_id, action="reset"):
     return
 
 
+def poweron(server_id): return power_operations(server_id, action="poweron")
+def poweroff(server_id): return power_operations(server_id, action="poweroff")
+def reset(server_id): return power_operations(server_id, action="reset")
+
+
 def console(server_id):
     """Request URL for console access."""
     url = "{}/console.php".format(target)
@@ -90,8 +107,8 @@ def console(server_id):
         print("[-] Got %d: %s" % (req.status_code, req.reason))
         return
 
-    if len(req.text)==0:
-        print("[-] Invalid server response")
+    if req.headers['content-length']==0 or len(req.text.strip())==0:
+        print("[-] no data")
         return
 
     res = req.json()

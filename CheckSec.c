@@ -6,7 +6,7 @@
  *
  * Collect files with:
  * c:\> dir /s /b C:\*.dll > DllList.txt
- * c:\> dir /s /b C:\*.dll > ExeList.txt
+ * c:\> dir /s /b C:\*.exe > ExeList.txt
  *
  * Run with:
  * c:\> CheckSec.exe -f DllList.txt > DllList_CheckSec.txt

