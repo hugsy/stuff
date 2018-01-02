@@ -2,3 +2,4 @@ termcolor
 netaddr
 requests
 bs4
+elftools
