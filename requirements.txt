@@ -3,3 +3,4 @@ netaddr
 requests
 bs4
 elftools
+pefile
