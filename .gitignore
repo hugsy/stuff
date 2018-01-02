@@ -1,2 +1,3 @@
 ida_color_gdb_trace/tests
 .gitignore
+*.pyc
