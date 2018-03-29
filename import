@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+imgname="$1"
+tmp=$(/bin/mktemp --suffix .png)
+
+/usr/bin/import ${tmp}
+/usr/bin/convert ${tmp}  \
+        \( -clone 0 -background black -shadow 80x4+20+20 \) \
+        \( -clone 0 -background black -shadow 80x4-10-10 \) \
+        -reverse -background none -layers merge +repage ${imgname}
+/bin/rm -f -- ${tmp}
+exit 0

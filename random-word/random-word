@@ -1,0 +1,16 @@
+#!/bin/bash
+
+DIR="$(dirname `readlink $0`)"
+WORDLISTS="${DIR}/english-adjectives.txt ${DIR}/english-nouns.txt"
+
+for wl in ${WORDLISTS}
+do
+    non_random_words=`cat ${wl} | wc -l`
+    random_number=`od -N3 -An -i /dev/urandom | awk -v f=0 -v r="$non_random_words" '{printf "%i\n", f + r * $1 / 16777216}'`
+    word=$(sed `echo ${random_number}`"q;d" ${wl})
+    res="${res} ${word}"
+done
+
+echo ${res}
+
+exit 0
