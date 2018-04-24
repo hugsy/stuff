@@ -3,6 +3,8 @@
  *
  * Compile with:
  * c:\> cl CheckSec.c
+ * or
+ * $ x86_64-w64-mingw32-gcc -municode -Wall -o ~/tmp/CheckSec.exe CheckSec.c -lwintrust
  *
  * Collect files with:
  * c:\> dir /s /b C:\*.dll > DllList.txt
@@ -20,16 +22,17 @@
 #define UNICODE 1
 
 #include <windows.h>
-#include <winnt.h>
+#include <softpub.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <tchar.h>
-#include <Softpub.h>
 #include <wincrypt.h>
 #include <wintrust.h>
 
 
+#if defined(_MSC_VER)
 #pragma comment (lib, "wintrust")
+#endif
 
 
 WORD CheckForFlags[] =
@@ -247,9 +250,9 @@ int CheckSecList( LPCWSTR sList )
         return 0;
 }
 
-
-int _tmain(int argc, wchar_t* argv[])
+int wmain(int argc, wchar_t** argv, wchar_t** envp)
 {
+        UNREFERENCED_PARAMETER(envp);
 	wchar_t **wsArgs;
 
 	wprintf(L"[+] %s: check DLL/EXE for DEP/ASLR flag\n", argv[0]);
@@ -270,12 +273,13 @@ int _tmain(int argc, wchar_t* argv[])
                         return 0;
                 }
 
-                wprintf(L"Incorrect syntax: %s -f \\path\\to\\dlllist.txt\n", argv[0]);
+                wprintf(L"Incorrect syntax: %s -f \\Path\\To\\DllList.txt\n", argv[0]);
                 return 1;
 	}
 
         for (wsArgs = argv+1; *wsArgs; wsArgs++){
                 CheckSecFile( *wsArgs );
         }
+	
 	return 0;
 }
