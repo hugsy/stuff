@@ -1,4 +1,8 @@
 #!/bin/sh
+#
+# Screen capture with added shadow effect
+#
+#
 
 set -e
 
@@ -11,4 +15,5 @@ tmp=$(/bin/mktemp --suffix .png)
         \( -clone 0 -background black -shadow 80x4-10-10 \) \
         -reverse -background none -layers merge +repage ${imgname}
 /bin/rm -f -- ${tmp}
+
 exit 0
