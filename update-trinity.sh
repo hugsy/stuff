@@ -47,5 +47,6 @@ echo "[+] Done" >&2
 
 echo "[+] Cleanup" >&2
 sudo rm -fr -- /tmp/{keystone,capstone,unicorn}
+sudo ldconfig
 
 popd
