@@ -1,10 +1,18 @@
+/**
+ *
+ * Enumerate object types from nt!ObpRootDirectoryObject
+ *
+ */
 "use strict";
 
 
 const log = x => host.diagnostics.debugLog(x + "\n");
 
 
-function invokeScript()
+/**
+ *
+ */
+function *ListObjects()
 {
 
     var ptrsz = host.namespace.Debugger.State.PseudoRegisters.General.ptrsize;
@@ -40,11 +48,36 @@ function invokeScript()
             var ObjDirEntry = RootDirectoryObject.HashBuckets[i];
             var ObjectHeaderAddress = ObjDirEntry.Object.address.subtract(hdroff);
             var ObjectHeader = host.createPointerObject(ObjectHeaderAddress, "nt", "_OBJECT_HEADER*");
-            log(i.toString() + " " + ObjectHeaderAddress.toString(16) + " " + ObjectHeader.ObjectName + " (" + ObjectHeader.ObjectType + ")");
+            yield ObjectHeader;
         }
-        catch(err){}
+        catch(err)
+        {
+        }
     }
 
 }
 
 
+/**
+ *
+ */
+function invokeScript()
+{
+    let i = 0;
+    for( let obj of ListObjects() )
+    {
+        log(i.toString() + " " + obj.address.toString(16) + " " + obj.ObjectName + " (" + obj.TypeIndex + ")");
+        i+= 1;
+    }
+}
+
+
+/**
+ *
+ */
+function initializeScript()
+{
+    return [
+        new host.functionAlias(ListObjects, "ObjectTypes"),
+    ];
+}

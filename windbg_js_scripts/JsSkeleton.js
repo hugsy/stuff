@@ -1,5 +1,5 @@
 /**
- * 
+ *
  */
 
 "use strict";
@@ -11,9 +11,11 @@ const u16 = x => host.memory.readMemoryValues(x, 1, 2)[0];
 const u32 = x => host.memory.readMemoryValues(x, 1, 4)[0];
 const u64 = x => host.memory.readMemoryValues(x, 1, 8)[0];
 
+function IsKd() { return host.namespace.Debugger.Sessions.First().Attributes.Target.IsKernelTarget != 0; }
+
 
 /**
- * 
+ *
  */
 function invokeScript()
 {
@@ -21,7 +23,7 @@ function invokeScript()
 
 
 /**
- * 
+ *
  */
 function initializeScript()
 {
@@ -29,7 +31,7 @@ function initializeScript()
 
 
 /**
- * 
+ *
  */
 function uninitializeScript()
 {

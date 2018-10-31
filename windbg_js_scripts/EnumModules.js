@@ -4,7 +4,7 @@
  *
  * Use as:
  * kd> .scriptload \path\to\EnumModules.js
- * kd> dx -g @$LoadedModules().First()
+ * kd> dx -g @$LoadedModules()
  *
  * Calling with `.scriptrun` will also dump the list
  */
@@ -13,19 +13,27 @@
 
 const log = x => host.diagnostics.debugLog(x + "\n");
 
+function IsKd() { return host.namespace.Debugger.Sessions.First().Attributes.Target.IsKernelTarget != 0; }
+
 
 /**
  * Create an iterator over the loaded modules (from nt!PsLoadedModuleList)
  */
 function *LoadedModuleList()
 {
+    if (IsKd())
+    {
+        log("Not KD");
+        yield;
+    }
+
     // Get the value associated to the symbol nt!PsLoadedModuleList
     // And "cast" it as nt!LIST_ENTRY
     let pPsLoadedModuleHead = host.createPointerObject(host.getModuleSymbolAddress("nt", "PsLoadedModuleList"), "nt", "_LIST_ENTRY *");
 
     // Dereference the pointer (which makes us point to ntoskrnl)
     // Cast it to nt!KLDR_DATA_TABLE_ENTRY
-    let pNtLdrDataEntry = host.createPointerObject(pPsLoadedModuleHead.Flink.address, "nt", "_KLDR_DATA_TABLE_ENTRY *");
+    let pNtLdrDataEntry = host.createPointerObject(pPsLoadedModuleHead.address, "nt", "_KLDR_DATA_TABLE_ENTRY *");
 
     // Create the iterator
     let PsLoadedModuleList = host.namespace.Debugger.Utility.Collections.FromListEntry(
@@ -61,10 +69,3 @@ function initializeScript()
     return [new host.functionAlias(LoadedModuleList, "LoadedModules")];
 }
 
-
-/**
- *
- */
-function uninitializeScript()
-{
-}

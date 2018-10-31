@@ -1,19 +1,19 @@
 "use strict";
 
-var log = host.diagnostics.debugLog;
+const log = x => host.diagnostics.debugLog(x + "\n");
 
 function invokeScript()
 {
-    log("Hello world from `invokeScript`\n");
+    log("Hello world from `invokeScript`");
 }
 
 function initializeScript()
 {
-    log("Hello world from `initializeScript`\n");
+    log("Hello world from `initializeScript`");
 }
 
 function uninitializeScript()
 {
-    log("Goodbye world from `uninitializeScript`\n");
+    log("Goodbye world from `uninitializeScript`");
 }
 
