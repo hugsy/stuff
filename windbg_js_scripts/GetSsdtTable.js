@@ -4,6 +4,9 @@
  *
  * Note: this script is done for x64 versions of Windows (no need on x32)
  *
+ * Use as:
+ * kd> .scriptload \path\to\GetSsdtTable.js
+ * kd> dx @$ServiceTable().Where( s => s.Name.Contains("nt") ).Count()
  */
 "use strict";
 
