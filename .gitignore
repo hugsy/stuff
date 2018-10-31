@@ -1,3 +1,9 @@
 ida_color_gdb_trace/tests
 .gitignore
 *.pyc
+*.exe
+*.lib
+*.dll
+*.so
+*.o
+*.exp
