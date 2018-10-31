@@ -9,6 +9,20 @@
 
 const log = x => host.diagnostics.debugLog(x + "\n");
 
+class SsdtEntry
+{
+    constructor(addr, name)
+    {
+        this.Address = addr
+        this.Name = name;
+    }
+
+    toString()
+    {
+        return "(" + this.Address.toString(16) + ") " + this.Name;
+    }
+}
+
 
 /**
  * Run a native WinDBG command and get the result as a string
@@ -19,7 +33,7 @@ function ExecuteCommand(cmd)
 }
 
 
-/** 
+/**
  * Dereference an integer pointer
  */
 function Dereference(addr)
@@ -64,9 +78,9 @@ function *ShowSsdtTable()
     let OffsetTable = FetchSsdtOffsets();
     for (var i = 0 ; i < OffsetTable.Offsets.Count(); i++)
     {
-        var Entry = OffsetTable.Base.add(OffsetTable.Offsets[i] >> 4);
-        var Symbol = GetSymbolFromAddress(Entry);
-        yield(Symbol);
+        var Address = OffsetTable.Base.add(OffsetTable.Offsets[i] >> 4);
+        var Symbol = GetSymbolFromAddress(Address);
+        yield new SsdtEntry(Address, Symbol) ;
     }
 }
 
