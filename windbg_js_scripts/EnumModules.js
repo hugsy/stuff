@@ -13,7 +13,7 @@
 
 const log = x => host.diagnostics.debugLog(x + "\n");
 
-function IsKd() { return host.namespace.Debugger.Sessions.First().Attributes.Target.IsKernelTarget != 0; }
+function IsKd(){ return host.namespace.Debugger.Sessions.First().Attributes.Target.IsKernelTarget === true; }
 
 
 /**
@@ -21,14 +21,15 @@ function IsKd() { return host.namespace.Debugger.Sessions.First().Attributes.Tar
  */
 function *LoadedModuleList()
 {
-    if (IsKd())
+
+    if ( !IsKd() )
     {
         log("Not KD");
-        yield;
+        return;
     }
 
     // Get the value associated to the symbol nt!PsLoadedModuleList
-    // And "cast" it as nt!LIST_ENTRY
+    // And cast it as nt!LIST_ENTRY
     let pPsLoadedModuleHead = host.createPointerObject(host.getModuleSymbolAddress("nt", "PsLoadedModuleList"), "nt", "_LIST_ENTRY *");
 
     // Dereference the pointer (which makes us point to ntoskrnl)
