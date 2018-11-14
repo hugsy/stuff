@@ -6,7 +6,7 @@
  * Use as:
  * kd> .scriptload \path\to\GetInterruptDescriptorTable.js
  * kd> dx @$Idt().Count()
- * kd> dx @$Idt(0x2e)
+ * kd> dx @$Idt(0x2e).First()
  *
  */
 "use strict";
