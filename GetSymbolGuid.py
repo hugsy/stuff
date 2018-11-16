@@ -4,7 +4,7 @@ import sys
 import uuid
 import struct
 
-def u32(x): return struct.unpack("<I", x)
+def u32(x): return struct.unpack("<I", x)[0]
 
 
 fname = sys.argv[1]
@@ -28,3 +28,9 @@ print("RSDS = '%s'" % magic)
 print("Version = %d" % version)
 print("PDB = '%s'" % pdb)
 print("GUID = '%s'" % str(guid))
+print("URL = https://msdl.microsoft.com/download/symbols/%s/%s%d/%s" % (
+    pdb,
+    str(guid).replace("-", ""),
+    version,
+    pdb
+))
