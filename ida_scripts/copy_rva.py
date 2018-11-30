@@ -29,9 +29,7 @@ def copy_to_clipboard(addr):
 
 
 def get_rva():
-    ea = idc.ScreenEA()
-    base = idaapi.get_imagebase()
-    rva = ea - base
+    rva = here() - idaapi.get_imagebase()
     return rva
 
 
