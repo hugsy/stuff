@@ -12,6 +12,7 @@ exec >${LOGFILE}
 set -e
 
 echo "[+] Log file is in '${LOGFILE}'" >&2
+echo "[+] Starting compilation on ${NB_CPU} core(s)" >&2
 
 pushd .
 
