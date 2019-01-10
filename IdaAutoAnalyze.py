@@ -24,7 +24,7 @@ import magic
 IDA_BIN = "ida.exe"
 IDA64_BIN = "ida64.exe"
 IDA_PATH = os.sep.join(["C:", "Program Files", "IDA 7.1"])
-IDB_PATH = os.sep.join(["Y:", "IDBs"])
+IDB_PATH = os.sep.join(["C:", "Temp"])
 
 
 
@@ -124,11 +124,17 @@ def guess_ida_from_file(src):
     return os.sep.join([IDA_PATH, IDA_BIN])
 
 
-def auto_analyze_file(f):
+def auto_analyze_file(f, idb):
     ida = guess_ida_from_file(f)
-    return generate_idb_file(f, ida)
+    return generate_idb_file(f, ida, idb)
 
 
 if __name__ == "__main__":
-    auto_analyze_file( sys.argv[1] )
+    if len(sys.argv) < 2:
+        sys.exit(1)
+
+    src = sys.argv[1]
+    idb_path = sys.argv[2] if len(sys.argv) > 2 else IDB_PATH
+
+    auto_analyze_file(src, idb_path)
     sys.exit(0)
