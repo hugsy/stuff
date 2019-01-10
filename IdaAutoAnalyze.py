@@ -57,11 +57,15 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     _hash = hashlib.sha1( open(src, "rb").read() ).hexdigest()
     idb_with_hash = idb.replace(ext2, "-{}{}".format(_hash, ext2))
 
+    if os.access(idb_with_hash, os.R_OK):
+        return 0
+
+
     #
     # run IDA
     #
     # https://www.hex-rays.com/products/ida/support/idadoc/417.shtml
-        #
+    #
 
     os.environ["DIAPHORA_AUTO"] = "1"
     os.environ["DIAPHORA_EXPORT_FILE"] = idb_with_hash.replace(ext2, ".sqlite")
