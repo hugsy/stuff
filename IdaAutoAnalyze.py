@@ -6,10 +6,13 @@ Requires:
  - python-magic
  - python-magic-bin (WIN)
 
+TODO:
+ - use configparser
 """
 
 from __future__ import print_function
 
+import configparser
 import glob
 import hashlib
 import os
@@ -20,19 +23,23 @@ import tempfile
 
 import magic
 
+HOMEDIR = os.sep.join([os.environ["HOMEDRIVE"], os.environ["HOMEPATH"]])
+cfg = configparser.ConfigParser(
+    defaults={"HOME": HOMEDIR},
+    allow_no_value=True
+)
+cfg.read(os.sep.join([HOMEDIR, "IdaAutoAnalyze.cfg"]))
 
 IDA_BIN = "ida.exe"
 IDA64_BIN = "ida64.exe"
-IDA_PATH = os.sep.join(["C:", "Program Files", "IDA 7.1"])
-IDB_PATH = os.sep.join(["C:", "Temp"])
+IDA_PATH = cfg.get("IDA", "ida_path")
+IDB_PATH = cfg.get("IDA", "idb_path")
 
 
 
 def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
 
-    external_scripts = [
-        r'w:\win\IDA\plugins\diaphora\diaphora.py',
-    ]
+    external_scripts = cfg.get("Scripts", "scripts").splitlines()
 
 
     #
@@ -56,10 +63,12 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     idb = dst + ext2
     _hash = hashlib.sha1( open(src, "rb").read() ).hexdigest()
     idb_with_hash = idb.replace(ext2, "-{}{}".format(_hash, ext2))
+    dst_with_hash = dst.replace(ext, "-{}{}".format(_hash, ext))
 
     if os.access(idb_with_hash, os.R_OK):
         return 0
 
+    os.rename(dst, dst_with_hash)
 
     #
     # run IDA
@@ -68,7 +77,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     #
 
     os.environ["DIAPHORA_AUTO"] = "1"
-    os.environ["DIAPHORA_EXPORT_FILE"] = idb_with_hash.replace(ext2, ".sqlite")
+    os.environ["DIAPHORA_EXPORT_FILE"] = dst_with_hash.replace(ext, ".sqlite")
 
 
     # ida in batch mode
@@ -76,20 +85,17 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
 
     # add the scripts
     for s in external_scripts:
-        cmd.append("-S{}".format(s))
+        cmd.append("""-S"{}" """.format(s))
 
     # log
-    logfile = idb_with_hash.replace(ext2, ".log")
+    logfile = dst_with_hash.replace(ext, ".log")
     cmd.append("-L{}".format(logfile))
 
     # add the target
-    cmd.append(dst)
+    cmd.append(dst_with_hash)
 
     # run ida
     retcode = subprocess.call(cmd)
-
-    # include sha1 in filename
-    os.rename(idb, idb_with_hash)
 
 
     #
@@ -97,7 +103,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     #
     print("[+] Cleanup")
 
-    os.unlink(dst)
+    os.unlink(dst_with_hash)
     # os.unlink(dst + ".asm")
     try:
         os.unlink(os.sep.join([idb_path, "pingme.txt"]))
@@ -135,6 +141,5 @@ if __name__ == "__main__":
 
     src = sys.argv[1]
     idb_path = sys.argv[2] if len(sys.argv) > 2 else IDB_PATH
-
     auto_analyze_file(src, idb_path)
     sys.exit(0)

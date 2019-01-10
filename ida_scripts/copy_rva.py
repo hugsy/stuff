@@ -10,7 +10,7 @@ import os, Tkinter
 import idaapi, idc
 
 PLUGIN_NAME = "CopyRva"
-PLUGIN_HOTKEY = "Ctrl-Alt-H"
+PLUGIN_HOTKEY = "Ctrl-Alt-G"
 PLUGIN_VERSION = "0.1"
 PLUGIN_AUTHOR = "@_hugsy_"
 

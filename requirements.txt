@@ -4,3 +4,5 @@ requests
 bs4
 pyelftools
 pefile
+python-magic
+python-magic-bin
