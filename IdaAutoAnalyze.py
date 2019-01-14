@@ -6,8 +6,6 @@ Requires:
  - python-magic
  - python-magic-bin (WIN)
 
-TODO:
- - use configparser
 """
 
 from __future__ import print_function
@@ -24,8 +22,9 @@ import tempfile
 import magic
 
 HOMEDIR = os.sep.join([os.environ["HOMEDRIVE"], os.environ["HOMEPATH"]])
+TEMPDIR = os.environ["TEMP"]
 cfg = configparser.ConfigParser(
-    defaults={"HOME": HOMEDIR},
+    defaults={"HOME": HOMEDIR, "TEMP": TEMPDIR},
     allow_no_value=True
 )
 cfg.read(os.sep.join([HOMEDIR, "IdaAutoAnalyze.cfg"]))
@@ -52,7 +51,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
 
     shutil.copy(src, dst)
 
-    ext = os.path.splitext(dst)[-1]
+    _, ext = os.path.splitext(dst)
 
     if ida_path.endswith("ida64.exe"):
         ext2 = ".i64"
@@ -66,6 +65,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     dst_with_hash = dst.replace(ext, "-{}{}".format(_hash, ext))
 
     if os.access(idb_with_hash, os.R_OK):
+        print("[+] IDB '{:s}' already exists...".format(idb_with_hash))
         return 0
 
     os.rename(dst, dst_with_hash)
