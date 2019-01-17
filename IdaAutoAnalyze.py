@@ -55,8 +55,8 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
         ext2 = ".i64"
     else:
         ext2 = ".idb"
-      
-    print("[+] Generating {} file from '{}' in '{}'...".format(ext2[:-1].upper(), src, idb_path))
+
+    print("[+] Generating {} file from '{}' in '{}'...".format(ext2[1:].upper(), src, idb_path))
 
 
     idb = dst + ext2
