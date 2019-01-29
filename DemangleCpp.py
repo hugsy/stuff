@@ -12,7 +12,7 @@ public: void __cdecl DEVLOCKOBJ::vFlushSpriteUpdates(int) __ptr64
 import sys
 from ctypes import *
 
-def cpp_demange(name):
+def cpp_demangle(name):
     prototype = WINFUNCTYPE(wintypes.HANDLE, c_char_p)
     paramflags = (1, "lpModuleName"),
     LoadLibraryA = prototype( ("LoadLibraryA", windll.kernel32), paramflags )
@@ -58,5 +58,5 @@ def cpp_demange(name):
 
 
 if __name__ == "__main__":
-    retcode, reason = cpp_demange(sys.argv[1])
+    retcode, reason = cpp_demangle(sys.argv[1])
     print(reason)
