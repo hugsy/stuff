@@ -11,6 +11,7 @@ public: void __cdecl DEVLOCKOBJ::vFlushSpriteUpdates(int) __ptr64
 
 import sys
 from ctypes import *
+from ctypes import wintypes
 
 def cpp_demangle(name):
     prototype = WINFUNCTYPE(wintypes.HANDLE, c_char_p)
