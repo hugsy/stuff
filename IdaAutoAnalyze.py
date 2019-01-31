@@ -49,7 +49,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
 
     shutil.copy(src, dst)
 
-    _, ext = os.path.splitext(dst)
+    basename, ext = os.path.splitext(dst)
 
     if ida_path.endswith("ida64.exe"):
         ext2 = ".i64"
@@ -68,7 +68,7 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
         print("[+] IDB '{:s}' already exists...".format(idb_with_hash))
         return 0
 
-    os.rename(dst, dst_with_hash)
+
 
     #
     # run IDA
@@ -92,10 +92,12 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     cmd.append("-L{}".format(logfile))
 
     # add the target
-    cmd.append(dst_with_hash)
+    cmd.append(dst)
 
     # run ida
     retcode = subprocess.call(cmd)
+
+    os.rename(basename + ext2, idb_with_hash)
 
 
     #
@@ -103,8 +105,8 @@ def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
     #
     print("[+] Cleanup")
 
-    os.unlink(dst_with_hash)
-    # os.unlink(dst + ".asm")
+    os.unlink(basename + ext)
+
     try:
         os.unlink(os.sep.join([idb_path, "pingme.txt"]))
         for p in glob.glob(os.sep.join([idb_path, "*.pdb"])):
