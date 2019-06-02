@@ -36,91 +36,66 @@ IDB_PATH = cfg.get("IDA", "idb_path")
 
 
 
-def generate_idb_file(src, ida_path=IDA_BIN, idb_path=IDB_PATH):
-
-    external_scripts = cfg.get("Scripts", "scripts").splitlines()
-
-
-    #
-    # init
-    #
-
-    dst = os.sep.join([idb_path, os.path.basename(src)])
-
-    shutil.copy(src, dst)
-
-    basename, ext = os.path.splitext(dst)
-
-    if ida_path.endswith("ida64.exe"):
-        ext2 = ".i64"
-    else:
-        ext2 = ".idb"
-
-    print("[+] Generating {} file from '{}' in '{}'...".format(ext2[1:].upper(), src, idb_path))
-
-
-    idb = dst + ext2
-    _hash = hashlib.sha1( open(src, "rb").read() ).hexdigest()
-    idb_with_hash = idb.replace(ext2, "-{}{}".format(_hash, ext2))
-    dst_with_hash = dst.replace(ext, "-{}{}".format(_hash, ext))
-
-    if os.access(idb_with_hash, os.R_OK):
-        print("[+] IDB '{:s}' already exists...".format(idb_with_hash))
-        return 0
-
-
-
-    #
-    # run IDA
-    #
-    # https://www.hex-rays.com/products/ida/support/idadoc/417.shtml
-    #
-
-    os.environ["DIAPHORA_AUTO"] = "1"
-    os.environ["DIAPHORA_EXPORT_FILE"] = dst_with_hash.replace(ext, ".sqlite")
-
+def run_ida(ida_exe_path, source_file, idb_file, log_file):
+    """
+    Run IDA headlessly on the source file, and execute the scripts.
+    Refs:
+    - https://www.hex-rays.com/products/ida/support/idadoc/417.shtml
+    """
 
     # ida in batch mode
-    cmd = [ida_path, "-B"]
+    cmd = [
+        ida_exe_path,
+        "-B",
+        "-c",
+        '-o"{}"'.format(idb_file),
+        '-L"{}"'.format(log_file),
+        source_file
+    ]
+
+    return subprocess.call(cmd)
+
+
+def run_ida_scripts_on_idb(ida_exe_path, idb_file):
+    """
+    Executes scripts on the IDB file
+    """
+    idb_file_name, idb_file_ext = os.path.splitext( idb_file )
+    external_scripts = cfg.get("Scripts", "scripts").splitlines()
+
+    os.environ["DIAPHORA_AUTO"] = "1"
+    os.environ["DIAPHORA_EXPORT_FILE"] = ".".join([idb_file_name, "sqlite"])
+
+    # ida in batch mode
+    cmd = [ida_exe_path, "-B"]
 
     # add the scripts
-    for s in external_scripts:
-        cmd.append("""-S"{}" """.format(s))
+    for script_path in external_scripts:
+        cmd.append('-S"{}"'.format(script_path))
 
-    # log
-    logfile = dst_with_hash.replace(ext, ".log")
-    cmd.append("-L{}".format(logfile))
+    cmd.append(idb_file)
 
-    # add the target
-    cmd.append(dst)
-
-    # run ida
-    retcode = subprocess.call(cmd)
-
-    os.rename(basename + ext2, idb_with_hash)
+    return subprocess.call(cmd)
 
 
-    #
-    # cleanup
-    #
-    print("[+] Cleanup")
-
-    os.unlink(basename + ext)
-
+def cleanup():
+    """
+    Cleanup symbols downloaded by IDA
+    """
     try:
-        os.unlink(os.sep.join([idb_path, "pingme.txt"]))
-        for p in glob.glob(os.sep.join([idb_path, "*.pdb"])):
-            shutil.rmtree(p)
+        os.unlink(os.sep.join([IDB_PATH, "pingme.txt"]))
     except:
         pass
 
-    if retcode == 0:
-        os.unlink(logfile)
-        print("[+] Success")
-    else:
-        print("[-] An error occured, retcode={}".format(retcode))
+    for f in glob.glob(os.sep.join([IDB_PATH, "*.asm"])):
+        try:
+            os.unlink(f)
+        except:
+            pass
 
-    return retcode
+    for d in glob.glob(os.sep.join([IDB_PATH, "*.pdb"])):
+        shutil.rmtree(d)
+    return
 
 
 def guess_ida_from_file(src):
@@ -132,9 +107,75 @@ def guess_ida_from_file(src):
     return os.sep.join([IDA_PATH, IDA_BIN])
 
 
-def auto_analyze_file(f, idb):
-    ida = guess_ida_from_file(f)
-    return generate_idb_file(f, ida, idb)
+def rename_idb_with_hash(source_file, idb_file):
+    idb_file_name, idb_file_ext = os.path.splitext( idb_file )
+    digest = hashlib.md5( open(source_file, "rb").read() ).hexdigest()
+    new_idb_file_name = "".join([idb_file_name, "-", digest, idb_file_ext])
+    try:
+        os.rename(idb_file, new_idb_file_name)
+    except Exception as e:
+        print("[-] Got exception when renaming: {}'".format(str(e)))
+        os.system("pause")
+        return None
+    return new_idb_file_name
+
+
+def generate_idb_filename(source_file, is_ida64):
+    """
+    Generates IDB full path (\path\source_filename.(ida,i64))
+    @param `source_file` is the file in the IDB_PATH directory
+    @param `is_ida64`
+    @return a tuple with (idb_fullpath, log_fullpath)
+    """
+    source_file_basename = source_file #os.path.basename(source_file)
+    target_ext = "i64" if is_ida64 else "idb"
+    target_file_path = ".".join([source_file_basename, target_ext])
+    target_log_path = ".".join([source_file_basename, "log"])
+    return (target_file_path, target_log_path)
+
+
+def auto_analyze_file(source_file, idb_path):
+    ida = guess_ida_from_file(source_file).lower()
+
+    if not os.access(ida, os.R_OK):
+        print("[-] Invalid IDA path: {}".format(ida))
+        os.system("pause")
+        return
+
+    # copy the source file to writable location
+    shutil.copy(source_file, IDB_PATH)
+    source_file = os.sep.join([IDB_PATH, os.path.basename(source_file)])
+    if not os.access(source_file, os.R_OK):
+        print("[-] Failed to copy '{}'".format(source_file))
+        os.system("pause")
+        return
+
+    if ida.endswith("ida64.exe"):
+        print("[+] Using IDA64 ('{}')...".format(ida))
+        idb_filepath, log_filepath = generate_idb_filename(source_file, True)
+    else:
+        print("[+] Using IDA ('{}')...".format(ida))
+        idb_filepath, log_filepath = generate_idb_filename(source_file, False)
+
+    res = run_ida(ida, source_file, idb_filepath, log_filepath)
+    if res != 0:
+        print("[-] IDA execution failed: retcode={}, check logs in '{}'".format(res, log_filepath))
+        os.system("pause")
+        return
+
+    idb_filepath = rename_idb_with_hash(source_file, idb_filepath)
+    if idb_filepath is None:
+        return
+
+    print("[+] IDB created as '{}'...".format(idb_filepath))
+    os.unlink(source_file)
+    os.unlink(log_filepath)
+    cleanup()
+
+    # scripts
+    # run_ida_scripts_on_idb(ida, idb_filepath)
+
+    return
 
 
 if __name__ == "__main__":
