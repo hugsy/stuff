@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import datetime
 
 import magic
 
@@ -33,7 +34,16 @@ IDA_BIN = "ida.exe"
 IDA64_BIN = "ida64.exe"
 IDA_PATH = cfg.get("IDA", "ida_path")
 IDB_PATH = cfg.get("IDA", "idb_path")
+LOG_FILE = cfg.get("IDA", "log_file") or ".\\IdaAutoAnalyze.log"
 
+
+def log(x):
+    with open(LOG_FILE, "a+") as f:
+        now = datetime.datetime.now()
+        msg = "{:s} {:s}".format(now.strftime("%F"), x)
+        print(msg)
+        f.write(msg + os.linesep)
+    return
 
 
 def run_ida(ida_exe_path, source_file, idb_file, log_file):
@@ -46,14 +56,16 @@ def run_ida(ida_exe_path, source_file, idb_file, log_file):
     # ida in batch mode
     cmd = [
         ida_exe_path,
+        "-A",
         "-B",
         "-c",
-        '-o"{}"'.format(idb_file),
-        '-L"{}"'.format(log_file),
+        #'-o"{}"'.format(idb_file),
+        #'-L"{}"'.format(log_file),
         source_file
     ]
-
-    return subprocess.call(cmd)
+    log("[+] Running '%s'" % cmd)
+    res = subprocess.call(cmd)
+    return res
 
 
 def run_ida_scripts_on_idb(ida_exe_path, idb_file):
@@ -83,19 +95,24 @@ def cleanup():
     Cleanup symbols downloaded by IDA
     """
     try:
-        os.unlink(os.sep.join([IDB_PATH, "pingme.txt"]))
+        fname = os.sep.join([IDB_PATH, "pingme.txt"])
+        os.unlink(fname)
+        log("deleted '{}'".format(fname))
     except:
         pass
 
     for f in glob.glob(os.sep.join([IDB_PATH, "*.asm"])):
         try:
             os.unlink(f)
+            log("deleted '{}'".format(f))
         except:
             pass
 
     for d in glob.glob(os.sep.join([IDB_PATH, "*.pdb"])):
         shutil.rmtree(d)
-    return
+        log("deleted '{}'".format(d))
+
+    return 0
 
 
 def guess_ida_from_file(src):
@@ -114,8 +131,7 @@ def rename_idb_with_hash(source_file, idb_file):
     try:
         os.rename(idb_file, new_idb_file_name)
     except Exception as e:
-        print("[-] Got exception when renaming: {}'".format(str(e)))
-        os.system("pause")
+        log("[-] Got exception when renaming: {}'".format(str(e)))
         return None
     return new_idb_file_name
 
@@ -134,55 +150,54 @@ def generate_idb_filename(source_file, is_ida64):
     return (target_file_path, target_log_path)
 
 
-def auto_analyze_file(source_file, idb_path):
+def auto_analyze_file(source_file):
     ida = guess_ida_from_file(source_file).lower()
 
     if not os.access(ida, os.R_OK):
-        print("[-] Invalid IDA path: {}".format(ida))
-        os.system("pause")
-        return
+        log("[-] Invalid IDA path: {}".format(ida))
+        return 1
 
     # copy the source file to writable location
     shutil.copy(source_file, IDB_PATH)
     source_file = os.sep.join([IDB_PATH, os.path.basename(source_file)])
     if not os.access(source_file, os.R_OK):
-        print("[-] Failed to copy '{}'".format(source_file))
-        os.system("pause")
-        return
+        log("[-] Failed to copy '{}'".format(source_file))
+        return 1
 
     if ida.endswith("ida64.exe"):
-        print("[+] Using IDA64 ('{}')...".format(ida))
+        log("[+] Using IDA64 ('{}')...".format(ida))
         idb_filepath, log_filepath = generate_idb_filename(source_file, True)
     else:
-        print("[+] Using IDA ('{}')...".format(ida))
+        log("[+] Using IDA ('{}')...".format(ida))
         idb_filepath, log_filepath = generate_idb_filename(source_file, False)
 
     res = run_ida(ida, source_file, idb_filepath, log_filepath)
     if res != 0:
-        print("[-] IDA execution failed: retcode={}, check logs in '{}'".format(res, log_filepath))
-        os.system("pause")
-        return
+        log("[-] IDA execution failed: retcode={}, check logs in '{}'".format(res, log_filepath))
+        return 1
 
     idb_filepath = rename_idb_with_hash(source_file, idb_filepath)
     if idb_filepath is None:
-        return
+        return 1
 
-    print("[+] IDB created as '{}'...".format(idb_filepath))
+    log("[+] IDB created as '{}'...".format(idb_filepath))
+
+    # cleanup
     os.unlink(source_file)
     os.unlink(log_filepath)
     cleanup()
 
     # scripts
-    # run_ida_scripts_on_idb(ida, idb_filepath)
+    log("[+] running extra script(s) on '{}'...".format(idb_filepath))
+    run_ida_scripts_on_idb(ida, idb_filepath)
 
-    return
+    return 0
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(1)
 
-    src = sys.argv[1]
-    idb_path = sys.argv[2] if len(sys.argv) > 2 else IDB_PATH
-    auto_analyze_file(src, idb_path)
-    sys.exit(0)
+    res = auto_analyze_file(sys.argv[1])
+    log("{:s} returned {:d}".format(sys.argv[0], res))
+    sys.exit(res)
