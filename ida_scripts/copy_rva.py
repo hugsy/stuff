@@ -1,17 +1,20 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python3
 # -*- mode: python -*-
 # -*- coding: utf-8 -*-
 
 """
 Send RVA to clipboard in a WinDBG compatible format
+
+0.2 Python3 (IDA >= 7.4)
+0.1 Python2 (IDA <= 7.3)
 """
 
-import os, Tkinter
+import os, tkinter
 import idaapi, idc
 
 PLUGIN_NAME = "CopyRva"
 PLUGIN_HOTKEY = "Ctrl-Alt-H"
-PLUGIN_VERSION = "0.1"
+PLUGIN_VERSION = "0.2"
 PLUGIN_AUTHOR = "@_hugsy_"
 
 
@@ -33,7 +36,7 @@ class CopyRvaPlugin(idaapi.plugin_t):
     def copy_to_clipboard(self, addr):
         name = os.path.splitext(idc.GetInputFile())[0]
         f = "{:s}+{:x}".format(name, addr)
-        r = Tkinter.Tk()
+        r = tkinter.Tk()
         r.withdraw()
         r.clipboard_clear()
         r.clipboard_append("{:s}".format(f))
@@ -61,7 +64,7 @@ class CopyRvaPlugin(idaapi.plugin_t):
         return
 
 
-    def run(self, _=0):
+    def run(self, arg):
         pass
 
 
@@ -72,4 +75,8 @@ class CopyRvaPlugin(idaapi.plugin_t):
 
 def PLUGIN_ENTRY():
     return CopyRvaPlugin()
+    
+    
+if __name__ == "__main__":
+    PLUGIN_ENTRY()    
 
