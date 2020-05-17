@@ -43,7 +43,7 @@ echo "[+] Installing unicorn + bindings" >&2
 pushd /tmp
 git clone --quiet https://github.com/unicorn-engine/unicorn.git
 cd unicorn
-UNICORN_QEMU_FLAGS="--python=`which python2`" MAKE_JOBS=${NB_CPU} ./make.sh
+MAKE_JOBS=${NB_CPU} ./make.sh
 sudo ./make.sh install
 cd ./bindings/python
 sudo make install install3
