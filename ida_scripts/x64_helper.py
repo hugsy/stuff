@@ -13,7 +13,7 @@ def get_register_index(regs, reg):
 def dereference_register(ea, reg):
     return GetReg(ea, reg)
 
-ea = ScreenEA()
+ea = here()
 
 for func in Functions(SegStart(ea), SegEnd(ea)):
     regs = {
@@ -24,7 +24,7 @@ for func in Functions(SegStart(ea), SegEnd(ea)):
         "r8" : None,
         "r9" : None,
     }
-    
+
     name = GetFunctionName(func)
     for item in list(FuncItems(func)):
         # opc = GetDisasm(item)
@@ -42,11 +42,11 @@ for func in Functions(SegStart(ea), SegEnd(ea)):
             dst = GetOpnd(item, 0)
             src = GetOpnd(item, 1)
             # src = int(GetOperandValue(item, 1))
-                
+
             idx = get_register_index(regs, dst)
             if idx is None:
                 continue
-            
+
             regs[idx] = src
             MakeComm(item, "$%s = %s;" % (dst, src))
 
