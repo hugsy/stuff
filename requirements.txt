@@ -1,8 +1,10 @@
-termcolor
-netaddr
-requests
 bs4
-pyelftools
+matplotlib
+netaddr
+numpy
 pefile
+pyelftools
 python-magic
 python-magic-bin
+requests
+termcolor
