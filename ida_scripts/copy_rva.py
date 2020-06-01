@@ -12,7 +12,7 @@ Send RVA to clipboard in a WinDBG compatible format
 import os, tkinter
 
 import idaapi, idc
-import ida_expr
+import ida_expr, ida_kernwin
 
 
 PLUGIN_NAME = "CopyRva"
@@ -36,7 +36,6 @@ class CopyRvaPlugin(idaapi.plugin_t):
 
 
     def copy_to_clipboard(self, addr):
-        print("foio")
         name = os.path.splitext(idc.GetInputFile())[0]
         f = "{:s}+{:x}".format(name, addr)
         r = tkinter.Tk()
