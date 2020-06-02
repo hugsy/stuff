@@ -57,11 +57,11 @@ import idautils
 
 PLUGIN_NAME = "RunRpycServer"
 PLUGIN_HOTKEY = "Ctrl-Alt-K"
-PLUGIN_VERSION = "0.2" # for IDA < 7.2 revert commits to 0.1
+PLUGIN_VERSION = "0.2"
 PLUGIN_AUTHOR = "@_hugsy_"
 
 HOST, PORT = "0.0.0.0", 18812
-DEBUG = True
+DEBUG = False
 
 def xlog(x):
     sys.stderr.write("{} - {}\n".format(threading.current_thread().name, x)) and sys.stderr.flush()
