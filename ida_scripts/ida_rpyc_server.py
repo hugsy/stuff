@@ -162,8 +162,8 @@ def start():
         s = rpyc.utils.server.OneShotServer(g_IdaServer, hostname=HOST, port=PORT)
     else:
         s = rpyc.utils.server.ThreadedServer(g_IdaServer, hostname=HOST, port=PORT)
+    ok(" starting server...")
     s.start()
-    ok("server started")
     s.close()
     ok("server closed")
     return

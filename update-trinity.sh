@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Install/update Capstone/Keystone/Unicorn from GitHub with Python/Python3 bindings
+# Install/update Capstone/Keystone/Unicorn from GitHub with Python2/Python3 bindings
 # First time, run:
 # $ sudo apt-get install git cmake gcc g++ pkg-config libglib2.0-dev
 #
