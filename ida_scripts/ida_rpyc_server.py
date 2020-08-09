@@ -12,9 +12,9 @@ for the workaround on the threading issue, for IDA Pro >= 7.2
 Quick start
 ```
 >>> import rpyc
->>> c = rpyc.connect("192.168.57.145", 18812)
+>>> c = rpyc.connect("ida.rpyc.server", 18812)
 #
-# IDA namespace is in `c.root`
+# IDA namespace will be in `c.root`
 #
 >>> c.root.idaapi.get_root_filename()
 'ntoskrnl.exe'
@@ -34,7 +34,7 @@ Example:
 ...    print( idc.get_func_name(ea) )
 ```
 
-Blame HexRays for making their API more shitty at every release.
+Blame HexRays for making their API more confusing at every release.
 
 Ref:
 - https://www.hex-rays.com/products/ida/support/ida74_idapython_no_bc695_porting_guide.shtml
