@@ -158,20 +158,58 @@ g_IdaServer = IdaRpycService()
 
 def start():
     global g_IdaServer
-    if DEBUG:
-        s = rpyc.utils.server.OneShotServer(g_IdaServer, hostname=HOST, port=PORT)
-    else:
-        s = rpyc.utils.server.ThreadedServer(g_IdaServer, hostname=HOST, port=PORT)
-    ok(" starting server...")
-    s.start()
-    s.close()
+    srv = None
+
+    for i in range(1):
+        port = PORT + i
+        try:
+            srv = rpyc.utils.server.OneShotServer(g_IdaServer, hostname=HOST, port=port) if DEBUG \
+                else rpyc.utils.server.ThreadedServer(g_IdaServer, hostname=HOST, port=port)
+            break
+        except OSError:
+            srv = None
+
+    if not srv:
+        err("failed to start server...")
+        return
+
+    ok("starting server...")
+    srv.start()
+    srv.close()
     ok("server closed")
     return
 
 
+t = None
 
-if __name__ == "__main__":
+def main():
+    global t
+    if t is not None:
+        err("thread is already running as {}".format(t))
+        return
+
     t = threading.Thread(target=start)
     t.daemon = True
     t.start()
     ok("service listening on {}:{}...".format(HOST, PORT))
+
+
+class dummy(idaapi.plugin_t):
+    wanted_name = PLUGIN_NAME
+    wanted_hotkey = ""
+    flags = idaapi.PLUGIN_UNL
+    comment = ""
+    help = ""
+
+    def init(self): return idaapi.PLUGIN_OK
+    def run(self, arg): pass
+    def term(self): pass
+
+
+def PLUGIN_ENTRY():
+    main()
+    return dummy()
+
+
+if __name__ == "__main__":
+    PLUGIN_ENTRY()
