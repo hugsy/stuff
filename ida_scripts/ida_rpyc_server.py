@@ -24,6 +24,19 @@ Quick start
 True
 ```
 
+For more facility, you can alias it:
+```
+>>> idc = c.root.idc
+```
+
+Then, it becomes super readable
+```
+>>> idc.jumpto( idc.get_name_ea_simple("DriverEntry") )
+True
+>>> idc.set_cmt( idc.here(), "@hugsy was here", 1)
+True
+```
+
 For generator objects, you now need to use the wrapper `c.root.iterate()`.
 
 Example:
