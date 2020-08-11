@@ -34,11 +34,9 @@ class BinjaRpycService(rpyc.Service):
         self.exposed_bv = bv
         return
 
-
     def on_connect(self, conn):
         info("connect open: {}".format(conn,))
         return
-
 
     def on_disconnect(self, conn):
         info("connection closed: {}".format(conn,))
@@ -46,8 +44,9 @@ class BinjaRpycService(rpyc.Service):
 
     exposed_binaryninja = binaryninja
 
-    # def exposed_bv(self):
-    #     return self.bv
+    def exposed_eval(self, cmd):
+        info("executing '{}'".format(cmd))
+        return eval(cmd)
 
 
 
