@@ -22,6 +22,12 @@ PLUGIN_HOTKEY = "Ctrl-Alt-H"
 PLUGIN_VERSION = "0.3"
 PLUGIN_AUTHOR = "@_hugsy_"
 
+#
+# Hashmap of filenames pointing to how they should be aliased
+#
+ALIASES = {
+    "ntoskrnl": "nt",
+}
 
 def get_rva() -> int:
     ea = idc.get_screen_ea()
@@ -40,6 +46,8 @@ def copy_ea_to_clipboard() -> bool:
     try:
         addr = get_rva()
         name = os.path.splitext( get_filename() )[0]
+        if name in ALIASES:
+            name = ALIASES[name]
         f = "{:s}+{:x}".format(name, addr)
         r = tkinter.Tk()
         r.withdraw()
@@ -59,7 +67,7 @@ class CopyRvaPlugin(idaapi.plugin_t):
     comment = "Quickly copy to clipboard the position of the cursor in IDA Pro"
     help = "Copy the position of the cursor in IDA Pro to clipboard in a WinDbg friendly format"
     wanted_name = PLUGIN_NAME
-    # wanted_hotkey = PLUGIN_HOTKEY
+    wanted_hotkey = ""
 
     def __init__(self) -> None:
         if ida_version_below_74:
