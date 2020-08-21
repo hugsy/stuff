@@ -62,35 +62,34 @@ def copy_ea_to_clipboard() -> bool:
     return True
 
 
+def copy_rva_main() -> None:
+    if ida_version_below_74:
+        idaapi.CompileLine('static send_ea_to_clipboard() { RunPythonStatement("copy_ea_to_clipboard()"); }')
+        idc.AddHotkey(PLUGIN_HOTKEY, "send_ea_to_clipboard")
+    else:
+        ida_expr.compile_idc_text('static send_ea_to_clipboard() { RunPythonStatement("copy_ea_to_clipboard()"); }')
+        ida_kernwin.add_idc_hotkey(PLUGIN_HOTKEY, "send_ea_to_clipboard")
+
+    print("[+] Press '{:s}' to copy RVA to clipboard".format(PLUGIN_HOTKEY))
+    return
+
+
 class CopyRvaPlugin(idaapi.plugin_t):
+    wanted_name = PLUGIN_NAME
+    wanted_hotkey = ""
     flags = idaapi.PLUGIN_UNL
     comment = "Quickly copy to clipboard the position of the cursor in IDA Pro"
     help = "Copy the position of the cursor in IDA Pro to clipboard in a WinDbg friendly format"
-    wanted_name = PLUGIN_NAME
-    wanted_hotkey = ""
 
-    def __init__(self) -> None:
-        if ida_version_below_74:
-            idaapi.CompileLine('static send_ea_to_clipboard() { RunPythonStatement("copy_ea_to_clipboard()"); }')
-            idc.AddHotkey(PLUGIN_HOTKEY, "send_ea_to_clipboard")
-        else:
-            ida_expr.compile_idc_text('static send_ea_to_clipboard() { RunPythonStatement("copy_ea_to_clipboard()"); }')
-            ida_kernwin.add_idc_hotkey(PLUGIN_HOTKEY, "send_ea_to_clipboard")
-
-        print("[+] Press '{:s}' to copy RVA to clipboard".format(PLUGIN_HOTKEY))
-        return
-
-    def run(self, arg=0) -> None:
-        return
-
-    def term(self) -> None:
-        return
+    def init(self): return idaapi.PLUGIN_OK
+    def run(self, arg): pass
+    def term(self): pass
 
 
-def PLUGIN_ENTRY() -> idaapi.plugin_t:
+def PLUGIN_ENTRY():
+    copy_rva_main()
     return CopyRvaPlugin()
 
 
 if __name__ == "__main__":
     PLUGIN_ENTRY()
-
