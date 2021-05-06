@@ -52,21 +52,22 @@ Blame HexRays for making their API more confusing at every release.
 Ref:
 - https://www.hex-rays.com/products/ida/support/ida74_idapython_no_bc695_porting_guide.shtml
 
-
 """
+
 import sys
-import os
 import random
 import threading
-import collections
-
 
 import rpyc
 import idc
 import idaapi
 import idautils
+import ida_bytes
+import ida_funcs
 
-
+# exported modules must be imported first
+import sys
+import os
 
 PLUGIN_NAME = "RunRpycServer"
 PLUGIN_HOTKEY = "Ctrl-Alt-K"
@@ -75,6 +76,9 @@ PLUGIN_AUTHOR = "@_hugsy_"
 
 HOST, PORT = "0.0.0.0", 18812
 DEBUG = False
+
+
+EXPOSED_MODULES = [idaapi, idc, idautils, os, sys]
 
 def xlog(x):
     sys.stderr.write("{} - {}\n".format(threading.current_thread().name, x)) and sys.stderr.flush()
@@ -101,11 +105,11 @@ class IdaWrapper:
             name = name.replace("exposed_", "")
             dbg("changed to get {}".format(name,))
 
-        val = getattr(idaapi, name, default)
-        if val == default:
-            val = getattr(idc, name, default)
-        if val == default:
-            val = getattr(idautils, name, default)
+        for mod in EXPOSED_MODULES:
+            val = getattr(mod, name, default)
+            if val != default:
+                break
+
         if val == default:
             raise AttributeError("unknown {}".format(name,))
 
@@ -135,12 +139,22 @@ class IdaRpycService(rpyc.Service):
 
     def on_connect(self, conn):
         ok("connect open: {}".format(conn,))
+        for mod in EXPOSED_MODULES:
+            setattr(self, "exposed_{}".format(mod.__name__), g_IdaWrapper)
         return
 
 
     def on_disconnect(self, conn):
         ok("connection closed: {}".format(conn,))
         return
+
+
+    def exposed_eval(self, cmd):
+        return eval(cmd)
+
+
+    def exposed_exec(self, cmd):
+        return exec(cmd)
 
 
     def exposed_iterate(self, iterator):
@@ -157,11 +171,6 @@ class IdaRpycService(rpyc.Service):
             if holder[0] == default:
                 return
             yield holder[0]
-
-
-    exposed_idaapi    = g_IdaWrapper
-    exposed_idc       = g_IdaWrapper
-    exposed_idautils  = g_IdaWrapper
 
 
 
