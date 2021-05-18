@@ -52,6 +52,9 @@ Blame HexRays for making their API more confusing at every release.
 Ref:
 - https://www.hex-rays.com/products/ida/support/ida74_idapython_no_bc695_porting_guide.shtml
 
+Demo:
+- https://youtu.be/obX2GreSsFU
+
 """
 
 import sys
