@@ -58,7 +58,7 @@ class Vulnerability:
 
 
     def __str__(self):
-        return f"{self.cve} // {self.title} // {self.severity} // {self.impact}"
+        return f"{self.cve} // KB{self.kb} // {self.title} // {self.severity} // {self.impact}"
 
 
 def get_product_name_from_id(soup, _id):
@@ -113,7 +113,8 @@ def get_patch_tuesday_data_soup():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get the Patch Tuesday info")
-    parser.add_argument("-p", "--product", help="Specifiy Product name", default=DEFAULT_PRODUCT)
+    parser.add_argument("-p", "--products", help="Specifiy Product name (can be repeated)",
+                        default=[DEFAULT_PRODUCT,], action='append', type=str)
     parser.add_argument("-m", "--month", help="Specifiy the Patch Tuesday month", default=datetime.date.today(),
                         type=lambda x: datetime.datetime.strptime(x, "%Y-%b"), metavar="YYYY-ABBREVMONTH")
     parser.add_argument("--list-products", help="List all products", action="store_true")
@@ -129,20 +130,22 @@ if __name__ == "__main__":
         exit(0)
 
 
-    vulns = get_vulns_for_product(soup, args.product)
     if args.summary:
-        print(f"For {args.month.strftime('%B %Y')}:")
-        print(f"* {len(vulns)} CVE{'s' if len(vulns)>1 else ''} for '{args.product}' including:")
-        print(f"  - { len( list(filter(lambda x: x.severity == 'Critical', vulns)) ) } critical")
-        print(f"  - { len( list(filter(lambda x: x.severity == 'Important', vulns)) ) } important")
-        print("* with:")
-        print(f"  - { len( list(filter(lambda x: x.impact == 'Remote Code Execution', vulns)) ) } are RCE")
-        print(f"  - { len( list(filter(lambda x: x.impact == 'Elevation of Privilege', vulns)) ) } are EoP")
-        print(f"  - { len( list(filter(lambda x: x.impact == 'Information Disclosure', vulns)) ) } are EoP")
-        exit(0)
+        for product in args.products:
+            vulns = get_vulns_for_product(soup, product)
+            print(f"For {args.month.strftime('%B %Y')}:")
+            print(f"{product:-^95}")
+            print(f"* {len(vulns)} CVE{'s' if len(vulns)>1 else ''} including:")
+            print(f"  - { len( list(filter(lambda x: x.severity == 'Critical', vulns)) ) } critical")
+            print(f"  - { len( list(filter(lambda x: x.severity == 'Important', vulns)) ) } important")
+            print("* with:")
+            print(f"  - { len( list(filter(lambda x: x.impact == 'Remote Code Execution', vulns)) ) } are RCE")
+            print(f"  - { len( list(filter(lambda x: x.impact == 'Elevation of Privilege', vulns)) ) } are EoP")
+            print(f"  - { len( list(filter(lambda x: x.impact == 'Information Disclosure', vulns)) ) } are EoP")
 
-
-    for vuln in vulns:
-        print(f"- {vuln}")
+    else:
+        for product in args.products:
+            for vuln in get_vulns_for_product(soup, product):
+                print(f"- {vuln}")
 
 
