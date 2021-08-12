@@ -31,7 +31,8 @@ class Vulnerability:
         self.severity = self.__get_impact_or_severity(node, "Severity")
         self.impact =  self.__get_impact_or_severity(node, "Impact")
         self.description = node.find("vuln:note", title="Description", type="Description").text.strip()
-        self.kb = self.__get_kb(node)
+        self.kb = self.__get_kb(node, "description")
+        self.superseeded_kb = self.__get_kb(node, "supercedence")
         self.itw = "Exploited:Yes" in node.find("vuln:threat", type="Exploit Status").text.strip()
         return
 
@@ -49,11 +50,11 @@ class Vulnerability:
         raise KeyError(f"Impact/Severity not found for {self.cve}")
 
 
-    def __get_kb(self, node):
+    def __get_kb(self, node, what="description"):
         for r in node.find_all("vuln:remediation"):
             __product_id = int(r.find("vuln:productid").text.strip())
             if __product_id == self.product_id:
-                return r.find("vuln:description").text.strip()
+                return r.find(f"vuln:{what}").text.strip()
         raise KeyError(f"KB not found for {self.cve}")
 
 
