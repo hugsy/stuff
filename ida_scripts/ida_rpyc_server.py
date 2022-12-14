@@ -79,7 +79,7 @@ PLUGIN_AUTHOR = "@_hugsy_"
 
 HOST, PORT = "0.0.0.0", 18812
 DEBUG = False
-
+MAX_RUNNING_INSTANCES = 10 if not DEBUG else 1
 
 EXPOSED_MODULES = [idaapi, idc, idautils, os, sys]
 
@@ -184,12 +184,14 @@ g_IdaServer = IdaRpycService()
 def start():
     global g_IdaServer
     srv = None
-
-    for i in range(1):
+    port = -1
+    for i in range(MAX_RUNNING_INSTANCES):
         port = PORT + i
         try:
             srv = rpyc.utils.server.OneShotServer(g_IdaServer, hostname=HOST, port=port) if DEBUG \
                 else rpyc.utils.server.ThreadedServer(g_IdaServer, hostname=HOST, port=port)
+            if not DEBUG and not srv:
+                continue
             break
         except OSError:
             srv = None
@@ -198,7 +200,7 @@ def start():
         err("failed to start server...")
         return
 
-    ok("starting server...")
+    ok(f"service listening on {HOST}:{port}...")
     srv.start()
     srv.close()
     ok("server closed")
@@ -216,7 +218,6 @@ def main():
     t = threading.Thread(target=start)
     t.daemon = True
     t.start()
-    ok("service listening on {}:{}...".format(HOST, PORT))
 
 
 class dummy(idaapi.plugin_t):

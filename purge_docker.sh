@@ -1,17 +1,22 @@
 #!/bin/bash
 
-
 set -e
+set -x
 
 # stop all containers
-docker container stop $(docker container ls –aq)
+running_containers="$(docker container ls -a -q)"
+test "${running_containers}" != "" && docker container stop $running_containers
 
 # remove stopped containers
-docker container rm $(docker container ls –aq)
-docker system prune –af ––volumes
+containers="$(docker container ls -a -q)"
+test "${containers}" != "" && docker container rm $containers
+
+# prunes all the volumes
+docker system prune -a -f --volumes
 
 # remove all images
-docker image rm $(docker image ls -aq)
+images="$(docker image ls -a -q)"
+test "${images}" != "" && docker image rm $images
 
 exit 0
 
