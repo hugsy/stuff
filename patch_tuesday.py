@@ -176,6 +176,8 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--months", help="Specify the Patch Tuesday month(s) (can be repeated)",
                         default=[], action='append',
                         type=lambda x: datetime.datetime.strptime(x, "%Y-%b"), metavar="YYYY-ABBREVMONTH")
+    parser.add_argument("-y", "--years", help="Specify a year - will be expended in months (can be repeated)",
+                        default=[], action='append', type=int)
     parser.add_argument("--list-products", help="List all products", action="store_true")
     parser.add_argument("--brief", help="Display a summary", action="store_true")
     parser.add_argument("-v", "--verbose", action="count", dest="verbose",
@@ -191,6 +193,11 @@ if __name__ == "__main__":
     if not len(args.products):
         print(f"Using default product as '{DEFAULT_PRODUCT}'")
         args.products = (DEFAULT_PRODUCT,)
+
+    if args.years:
+        for year in args.years:
+            for i in range(12):
+                args.months.append(datetime.date(year, 1 + i, 1))
 
     if not len(args.months):
         print(f"Using default month as '{datetime.date.today().strftime('%B %Y')}'")
