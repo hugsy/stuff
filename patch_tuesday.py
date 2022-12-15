@@ -1,7 +1,7 @@
 import argparse
 import datetime
 import re
-from typing import List
+from typing import List, Union
 
 import bs4
 import requests
@@ -14,6 +14,7 @@ DEFAULT_PRODUCT : str = "Windows 10 Version 22H2 for x64-based Systems"
 # DEFAULT_PRODUCT : str = "Windows 10 Version 1809 for x64-based Systems"
 KB_SEARCH_URL : str = "https://catalog.update.microsoft.com/v7/site/Search.aspx"
 DEFAULT_UA : str = """Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36"""
+CVE_URL : str = "https://msrc.microsoft.com/update-guide/vulnerability"
 
 class Vulnerability:
     product_id: int
@@ -109,6 +110,48 @@ def get_vulns_for_product(soup: bs4.BeautifulSoup, product: str) -> List[Vulnera
     return vulnerabilities
 
 
+def get_vuln_info_by_cve(soup: bs4.BeautifulSoup, cve: str) -> List[Vulnerability]:
+    """Search a vuln"""
+    vulnerabilities : list[Vulnerability] = []
+    for vuln in soup.find_all("vuln:Vulnerability"):
+        cve_node = vuln.find("vuln:CVE")
+        if not cve_node or not cve_node.text:
+            continue
+        if cve_node.text.lower() == cve.lower():
+            vulnerabilities.append(Vulnerability(0, vuln))
+    return vulnerabilities
+
+
+
+def get_vuln_info_by_kb(soup: bs4.BeautifulSoup, kb: int) -> List[Vulnerability]:
+    """Search a vuln"""
+    vulnerabilities : list[Vulnerability] = []
+    for vuln in soup.find_all("vuln:Vulnerability"):
+        cve_nodes = vuln.find_all("vuln:Remediation")
+        if not cve_nodes:
+            continue
+        for cve_node in cve_nodes:
+            kb_node = cve_node.find("vuln:Description")
+            if not kb_node or not kb_node.text:
+                continue
+            if kb_node.text.isdigit() and kb == int(kb_node.text):
+                vulnerabilities.append(Vulnerability(0, vuln))
+    return vulnerabilities
+
+
+
+def get_vuln_info(soup: bs4.BeautifulSoup, cve_or_kb: Union[str, int]) -> List[Vulnerability]:
+    """Search a vuln"""
+    if (isinstance(cve_or_kb, str) and cve_or_kb.lower().startswith("cve-")):
+        return get_vuln_info_by_cve(soup, cve_or_kb)
+    if (isinstance(cve_or_kb, str) and cve_or_kb.lower().startswith("kb")):
+        kb: int = int(cve_or_kb[2:])
+        return get_vuln_info_by_kb(soup, kb)
+    if isinstance(cve_or_kb, int):
+        return get_vuln_info_by_kb(soup, cve_or_kb)
+    raise ValueError
+
+
 def print_products(soup: bs4.BeautifulSoup):
     """Print all products"""
     for product in  soup.find_all("prod:FullProductName"):
@@ -126,6 +169,8 @@ def get_patch_tuesday_data_soup(month: datetime.date) -> bs4.BeautifulSoup:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Get the Patch Tuesday info")
+    parser.add_argument("-V", "--vulns", help="Specifiy the vuln(s) to detail (can be repeated)",
+                        default=[], action='append', type=str)
     parser.add_argument("-p", "--products", help="Specifiy Product name(s) (can be repeated)",
                         default=[], action='append', type=str)
     parser.add_argument("-m", "--months", help="Specify the Patch Tuesday month(s) (can be repeated)",
@@ -151,7 +196,7 @@ if __name__ == "__main__":
         print(f"Using default month as '{datetime.date.today().strftime('%B %Y')}'")
         args.months = (datetime.date.today(),)
 
-    summary = not args.brief
+    summary = not args.brief and not args.vulns
 
     for month in args.months:
         print(f"For {month.strftime('%B %Y')}")
@@ -169,10 +214,20 @@ if __name__ == "__main__":
                 print(f"  - { len( list(filter(lambda x: x.impact == 'Elevation of Privilege', vulns)) ) } are EoP")
                 print(f"  - { len( list(filter(lambda x: x.impact == 'Information Disclosure', vulns)) ) } are EoP")
 
+        if args.vulns:
+            for vuln_id in args.vulns:
+                for vuln in get_vuln_info(soup, vuln_id):
+                    print(f"- Title: {vuln.title}")
+                    print(f"- Description: {vuln.description}")
+                    print(f"- Impact: {vuln.impact}")
+                    print(f"- Severity: {vuln.severity}")
+                    print(f"- KB: {vuln.kb}")
+                    print(f"- CVE: {vuln.cve}")
+                    print(f"- Link: {CVE_URL}/{vuln.cve}")
+                    print(f"{'':-^95}")
+
         if summary:
             for product in args.products:
                 print(f"{product:-^95}")
                 for vuln in get_vulns_for_product(soup, product):
                     print(f"- {vuln}")
-
-
