@@ -1,7 +1,7 @@
-import requests
-import bs4
-import argparse
 import logging
+import argparse
+import bs4
+import requests
 
 #
 # Change here if you have your mirror of vergilius
@@ -9,7 +9,7 @@ import logging
 BASE = "https://www.vergiliusproject.com"
 
 
-def dump_structure(struct: str, arch: str, os: str, release: str) -> str:
+def dump_structure(structure_name: str, arch: str, os: str, release: str) -> str:
     """_summary_
 
     Args:
@@ -22,9 +22,9 @@ def dump_structure(struct: str, arch: str, os: str, release: str) -> str:
         str: _description_
     """
 
-    struct = struct.upper()
+    structure_name = structure_name.upper()
 
-    url = f"{BASE}/kernels/{arch}/{os}/{release}/{struct}"
+    url = f"{BASE}/kernels/{arch}/{os}/{release}/{structure_name}"
     h = requests.get(url, timeout=60)
     assert h.status_code == 200, f"Received HTTP {h.status_code}, expected 200"
 
