@@ -9,3 +9,5 @@ python-magic
 python-magic-bin
 requests
 termcolor
+rich
+black

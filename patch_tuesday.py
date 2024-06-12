@@ -1,15 +1,17 @@
-from typing import List, Union
-
 import argparse
 import datetime
+import logging
 import os
 import pathlib
 import tempfile
+from typing import List, Union
 
 import bs4
 import requests
-
-DEBUG = True
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.table import Table
+from rich.tree import Tree
 
 API_URL: str = "https://api.msrc.microsoft.com/cvrf/v2.0/document"
 DEFAULT_PRODUCT: str = "Windows 11 Version 22H2 for x64-based Systems"
@@ -18,29 +20,12 @@ DEFAULT_PRODUCT: str = "Windows 11 Version 22H2 for x64-based Systems"
 # DEFAULT_PRODUCT : str = "Windows 10 Version 1909 for x64-based Systems"
 # DEFAULT_PRODUCT : str = "Windows 10 Version 1809 for x64-based Systems"
 KB_SEARCH_URL: str = "https://catalog.update.microsoft.com/v7/site/Search.aspx"
-DEFAULT_UA: str = """Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36"""
+DEFAULT_UA: str = (
+    """Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36"""
+)
 CVE_URL: str = "https://msrc.microsoft.com/update-guide/vulnerability"
 
-
-def err(x: str):
-    print(f"[-] {x}")
-
-
-def warn(x: str):
-    print(f"[!] {x}")
-
-
-def ok(x: str):
-    print(f"[+] {x}")
-
-
-def info(x: str):
-    print(f"[*] {x}")
-
-
-def dbg(x: str):
-    if DEBUG:
-        print(f"[*] {x}")
+log = logging.getLogger(__name__)
 
 
 def get_root(node: bs4.Tag) -> bs4.Tag:
@@ -49,7 +34,7 @@ def get_root(node: bs4.Tag) -> bs4.Tag:
     while curnode != None:
         valid_parent = curnode
         curnode = curnode.parent
-    assert valid_parent is not None
+    assert valid_parent
     return valid_parent
 
 
@@ -87,14 +72,15 @@ class Product:
         if not vulns:
             return res
         for vuln in vulns:
-            for product_id_node in vuln.find_all("vuln:ProductID"):
-                if self.id == product_id_node.text.strip():
-                    res.add(Vulnerability(self, vuln))
-                    break
+            if not Vulnerability.is_impacted(self, vuln):
+                continue
+            res.add(Vulnerability(self, vuln))
+
         return res
 
 
 class Vulnerability:
+    vuln_node: bs4.Tag
     product: Product
     cve: str
     title: str
@@ -103,16 +89,18 @@ class Vulnerability:
     description: str
     itw: bool
     kb: str
+    superseeded_kb: str
     characteristics: dict[str, str]
 
     def __init__(self, product: Product, node: bs4.BeautifulSoup):
+        assert isinstance(product, Product)
+
         self.product = product
-        assert isinstance(self.product, Product)
-        self.__node = node
-        cve = self.__node.find("vuln:CVE")
+        self.vuln_node = node
+        cve = self.vuln_node.find("vuln:CVE")
         assert cve
         self.cve = cve.text.strip()
-        title = self.__node.find("vuln:Title")
+        title = self.vuln_node.find("vuln:Title")
         assert title
         self.title = title.text.strip()
         self.characteristics = {}
@@ -123,16 +111,25 @@ class Vulnerability:
         self.description = desc.text.strip()
         self.kb = self.__get_remediation_info("Description")
         self.superseeded_kb = self.__get_remediation_info("Supercedence")
-        threats = self.__node.find("vuln:Threat", Type="Exploit Status")
+        threats = self.vuln_node.find("vuln:Threat", Type="Exploit Status")
         assert threats
         self.itw = "Exploited:Yes" in threats.text.strip()
-        return
+
+    @staticmethod
+    def is_impacted(product: Product, node: bs4.BeautifulSoup) -> bool:
+        pid = product.id
+        return any(
+            filter(
+                lambda x: x.find("vuln:ProductID").text.strip() == pid,
+                node.find_all("vuln:Threat", Type="Impact"),
+            )
+        )
 
     def url(self) -> str:
         return f"{KB_SEARCH_URL}?q={self.kb}"
 
     def __get_impact_or_severity(self, node, what: str) -> str:
-        threats = self.__node.find("vuln:Threats")
+        threats = self.vuln_node.find("vuln:Threats")
         if threats and isinstance(threats, bs4.Tag):
             for threat in threats.find_all("vuln:Threat", Type=what):
                 _product_id = threat.find("vuln:ProductID").text.strip()
@@ -143,28 +140,30 @@ class Vulnerability:
     def __get_impact(self) -> str:
         if not "Impact" in self.characteristics:
             self.characteristics["Impact"] = self.__get_impact_or_severity(
-                self.__node, "Impact"
+                self.vuln_node, "Impact"
             )
         return self.characteristics["Impact"]
 
     def __get_severity(self) -> str:
         if not "Severity" in self.characteristics:
             self.characteristics["Severity"] = self.__get_impact_or_severity(
-                self.__node, "Severity"
+                self.vuln_node, "Severity"
             )
         return self.characteristics["Severity"]
 
     def __get_remediation_info(self, what: str) -> str:
         if not what in self.characteristics:
             self.characteristics[what] = ""
-            for r in self.__node.find_all("vuln:Remediation", Type="Vendor Fix"):
-                field = r.find("vuln:ProductID")
-                if not field:
+            for r in self.vuln_node.find_all("vuln:Remediation", Type="Vendor Fix"):
+                # field = r.find("vuln:ProductID")
+                # if not field:
+                #     continue
+                # current_product_ids = list(map(int, field.text.strip().split("-", 1)))
+                val = r.find(f"vuln:{what}").text or ""
+                if not val:
                     continue
-                current_product_ids = list(map(int, field.text.strip().split("-", 1)))
-                if self.product.id in current_product_ids:
-                    info = r.find(f"vuln:{what}")
-                    self.characteristics[what] = info.text.strip() if info else ""
+                self.characteristics[what] = val
+                break
         return self.characteristics[what]
 
     def __str__(self):
@@ -229,7 +228,10 @@ class Vulnerability:
 def collect_products(root: bs4.BeautifulSoup) -> dict[str, Product]:
     node = root.find("prod:ProductTree")
     assert isinstance(node, bs4.Tag)
-    return {product.text.strip() : Product(product) for product in node.find_all("prod:FullProductName")}
+    return {
+        product.text.strip(): Product(product)
+        for product in node.find_all("prod:FullProductName")
+    }
 
 
 def get_patch_tuesday_data_soup(month: datetime.date) -> bs4.BeautifulSoup:
@@ -237,17 +239,22 @@ def get_patch_tuesday_data_soup(month: datetime.date) -> bs4.BeautifulSoup:
     fpath = pathlib.Path(tempfile.gettempdir()) / fname
     if not fpath.exists():
         url = f"{API_URL}/{month.strftime('%Y-%b')}"
+        log.debug("Caching XML data from '{url}'")
         h = requests.get(url, headers={"User-Agent": DEFAULT_UA})
         if h.status_code != requests.codes.ok:
             raise RuntimeError(f"Unexpected code HTTP/{h.status_code}")
-        data = h.text
-        fpath.open("w", encoding="utf-8").write(data)
+        fpath.write_text(h.text, encoding="utf-8")
     else:
-        data = fpath.open("r", encoding="utf-8").read()
+        log.debug(f"Reading from cached file {fpath}")
+    data = fpath.read_text(encoding="utf-8")
     return bs4.BeautifulSoup(data, features="xml")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level="NOTSET", format="%(message)s", datefmt="[%X]", handlers=[RichHandler()]
+    )
+
     parser = argparse.ArgumentParser(description="Get the Patch Tuesday info")
     parser.add_argument(
         "-V",
@@ -268,7 +275,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-m",
         "--months",
-        help="Specify the Patch Tuesday month(s) (can be repeated)",
+        help="Repeatable arguemnt to specify the Patch Tuesday month(s), ex: 2021-Jun",
         default=[],
         action="append",
         type=lambda x: datetime.datetime.strptime(x, "%Y-%b"),
@@ -286,22 +293,28 @@ if __name__ == "__main__":
         "--list-products", help="List all products", action="store_true"
     )
     parser.add_argument("--brief", help="Display a summary", action="store_true")
-    parser.add_argument(
-        "-v", "--verbose", action="count", dest="verbose", help="Increments verbosity"
-    )
+    parser.add_argument("--debug", help="Set debug output", action="store_true")
 
     args = parser.parse_args()
+    if args.debug:
+        log.setLevel(logging.DEBUG)
+
     vulnerabilities: list[Vulnerability] = []
     today = datetime.date.today()
+    console = Console()
 
     if args.list_products:
         soup = get_patch_tuesday_data_soup(today)
         products = collect_products(soup)
-        info(os.linesep.join([f"- {name} (ID:{product.id})" for name, product in products.items()]))
+        log.info(
+            os.linesep.join(
+                [f"- {name} (ID:{product.id})" for name, product in products.items()]
+            )
+        )
         exit(0)
 
     if not len(args.products):
-        info(f"Using default product as '{DEFAULT_PRODUCT}'")
+        log.info(f"Using default product as '{DEFAULT_PRODUCT}'")
         args.products = (DEFAULT_PRODUCT,)
 
     if args.years:
@@ -314,39 +327,48 @@ if __name__ == "__main__":
         )
 
     if not len(args.months):
-        info(f"Using default month as '{today.strftime('%B %Y')}'")
+        log.debug(f"Using default month as '{today.strftime('%B %Y')}'")
         args.months = (today,)
 
     summary = not (args.brief or args.vulns)
 
+    log.debug(
+        f"Expanding KBs for {len(args.products)} products over {len(args.months)} months"
+    )
+
     for month in args.months:
-        info(f"For {month.strftime('%B %Y')}")
+        log.info(f"For {month.strftime('%B %Y')}")
         soup = get_patch_tuesday_data_soup(month)
         products = collect_products(soup)
-        info(f"Discovered {len(products)} products")
+        log.info(f"Discovered {len(products)} products")
 
         if args.brief:
+            tree = Tree(month.strftime("%B %Y"))
             for product_name in args.products:
                 product = products[product_name]
                 vulns = product.vulnerabilities
-                print(f"{product:-^95s}")
-                print(f"* {len(vulns)} CVE{'s' if len(vulns)>1 else ''} including:")
-                print(
-                    f"  - { len( list(filter(lambda x: x.severity == 'Critical', vulns)) ) } critical"
+                branch = tree.add(product_name)
+
+                subbranch = branch.add("Severity")
+                subbranch.add(
+                    f"{ len( list(filter(lambda x: x.severity == 'Critical', vulns)) ) } critical"
                 )
-                print(
-                    f"  - { len( list(filter(lambda x: x.severity == 'Important', vulns)) ) } important"
+                subbranch.add(
+                    f"{ len( list(filter(lambda x: x.severity == 'Important', vulns)) ) } important"
                 )
-                print("* with:")
-                print(
-                    f"  - { len( list(filter(lambda x: x.impact == 'Remote Code Execution', vulns)) ) } are RCE"
+
+                subbranch = branch.add("Impact")
+                subbranch.add(
+                    f"{ len( list(filter(lambda x: x.impact == 'Remote Code Execution', vulns)) ) } RCE"
                 )
-                print(
-                    f"  - { len( list(filter(lambda x: x.impact == 'Elevation of Privilege', vulns)) ) } are EoP"
+                subbranch.add(
+                    f"{ len( list(filter(lambda x: x.impact == 'Elevation of Privilege', vulns)) ) } EoP"
                 )
-                print(
-                    f"  - { len( list(filter(lambda x: x.impact == 'Information Disclosure', vulns)) ) } are EoP"
+                subbranch.add(
+                    f"{ len( list(filter(lambda x: x.impact == 'Information Disclosure', vulns)) ) } EoP"
                 )
+            console.print(tree)
+            continue
 
         if args.vulns:
             for product_name in args.products:
@@ -361,9 +383,35 @@ if __name__ == "__main__":
                     print(f"- CVE: {vuln.cve}")
                     print(f"- Link: {CVE_URL}/{vuln.cve}")
                     print(f"{'':-^95}")
+            continue
 
         if summary:
             for product_name in args.products:
                 product = products[product_name]
-                print(f"{product:-^95s}")
-                print(os.linesep.join([f"- {vuln.cve}: {vuln.impact}" for vuln in product.vulnerabilities]))
+                vulns = product.vulnerabilities
+
+                table = Table(
+                    title=f"Summary: {len(vulns)} vuln(s) affecting {product_name} on {month.strftime('%B %Y')}"
+                )
+                table.add_column("CVE")
+                table.add_column("Title")
+                table.add_column("Impact")
+                table.add_column("Severity")
+                table.add_column("KB")
+
+                max_title_length = 50
+                for vuln in vulns:
+                    title = (
+                        vuln.title
+                        if len(vuln.title) < max_title_length
+                        else f"{vuln.title[:max_title_length]}..."
+                    )
+                    table.add_row(
+                        vuln.cve,
+                        title,
+                        vuln.impact,
+                        vuln.severity,
+                        vuln.kb,
+                    )
+
+            console.print(table)
