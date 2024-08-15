@@ -155,11 +155,8 @@ class Vulnerability:
         if not what in self.characteristics:
             self.characteristics[what] = ""
             for r in self.vuln_node.find_all("vuln:Remediation", Type="Vendor Fix"):
-                # field = r.find("vuln:ProductID")
-                # if not field:
-                #     continue
-                # current_product_ids = list(map(int, field.text.strip().split("-", 1)))
-                val = r.find(f"vuln:{what}").text or ""
+                nod = r.find(f"vuln:{what}") 
+                val = nod.text if nod or ""
                 if not val:
                     continue
                 self.characteristics[what] = val
