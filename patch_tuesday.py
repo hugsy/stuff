@@ -155,8 +155,8 @@ class Vulnerability:
         if not what in self.characteristics:
             self.characteristics[what] = ""
             for r in self.vuln_node.find_all("vuln:Remediation", Type="Vendor Fix"):
-                nod = r.find(f"vuln:{what}") 
-                val = nod.text if nod or ""
+                nod = r.find(f"vuln:{what}")
+                val = nod.text if nod else ""
                 if not val:
                     continue
                 self.characteristics[what] = val
@@ -236,7 +236,7 @@ def get_patch_tuesday_data_soup(month: datetime.date) -> bs4.BeautifulSoup:
     fpath = pathlib.Path(tempfile.gettempdir()) / fname
     if not fpath.exists():
         url = f"{API_URL}/{month.strftime('%Y-%b')}"
-        log.debug("Caching XML data from '{url}'")
+        log.debug(f"Caching XML data from '{url}'")
         h = requests.get(url, headers={"User-Agent": DEFAULT_UA})
         if h.status_code != requests.codes.ok:
             raise RuntimeError(f"Unexpected code HTTP/{h.status_code}")
